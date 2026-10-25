@@ -1,165 +1,175 @@
-import {organize, decodeCsv, dateLabel, esc} from './core.mjs';
 import {mountRouting} from './routing-ui.mjs';
-
-const $ = id => document.getElementById(id);
-let auth = null, result = null, selected = new Set(), workbook = null, preview = null, revision = '', dirty = false, busy = false, epoch = 0, timer;
-const routing = mountRouting(() => {dirty = true; $('settings-status').textContent = 'Unsaved changes'; invalidate();}, toast);
-function toast(message, error = false) { clearTimeout(timer); $('toast').textContent = message; $('toast').classList.toggle('error', error); $('toast').hidden = false; timer = setTimeout(() => $('toast').hidden = true, 7000); }
-async function api(path, body) {
-  const response = await fetch('/api/' + path, {method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', cache: 'no-store',
-    headers: body === undefined ? {} : {'Content-Type': 'application/json', 'X-CSRF-Token': auth?.csrf || ''}, body: body === undefined ? undefined : JSON.stringify(body)});
-  let data;
-  try { data = await response.json(); } catch { throw new Error('The sending service is not installed yet. Complete the setup guide.'); }
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      clearSchedule(); $('workspace').hidden = true; $('gate').hidden = false;
-      $('gate-title').textContent = 'Access needs to be checked'; $('gate-message').textContent = data.error;
-      $('signin').hidden = response.status !== 401; $('refresh-access').hidden = false;
-    }
-    const error = new Error(data.error || 'The request failed.'); error.code = data.code; throw error;
-  }
-  return data;
+import {departmentBatches} from './routing.mjs';
+import {organize,decodeCsv,toCsv,emailHtml,emailText,dateLabel,recipients,esc} from './core.mjs';
+const $=id=>document.getElementById(id);
+let result=null,selection=new Set(),chosenDepartment='',epoch=0,toastTimer,excelSource=null,lastCopied='',fallbackSnapshot='';
+function toast(text,error=false) {clearTimeout(toastTimer);$('toast').textContent=text;$('toast').classList.toggle('error',error);$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,6500);}
+function currentBatch() {return departmentBatches(result?.rows||[],routing.settings,selection).batches.find(b=>b.id===chosenDepartment);}
+function selectedRows() {return currentBatch()?.rows||[];}
+const routing=mountRouting(()=>{$('review-check').checked=false;autoSubject();render();},toast);
+function emailSnapshot(){return JSON.stringify({group:chosenDepartment,rows:selectedRows(),to:currentBatch()?.to,cc:currentBatch()?.cc,bcc:$('bcc').checked,subject:$('subject').value,intro:$('intro').value,signature:$('signature').value});}
+function reviewed() {return result && !result.errors.length && selectedRows().length && $('review-check').checked && (!result.warnings.length || $('warning-check').checked);}
+function copyAllowed() {return Boolean(reviewed() && currentBatch()?.ready);}
+function reset(message=true) {
+  epoch++;lastCopied='';fallbackSnapshot='';result=null;selection=new Set();chosenDepartment='';excelSource=null;if(message)routing.reset();routing.setRows([],selection);
+  for(const id of ['file','to','cc','subject','intro','signature','fallback-text'])$(id).value='';
+  for(const id of ['review-check','warning-check','bcc'])$(id).checked=false;
+  $('review-check').disabled=true;$('email-fields').disabled=true;$('date-fieldset').disabled=true;$('department').disabled=true;
+  $('department').innerHTML='<option value="">Choose a department</option>';$('dates').innerHTML='<span class="empty-control">No schedule loaded</span>';
+  $('file-info').hidden=true;$('dropzone').hidden=false;$('dropzone').classList.remove('drag');
+  $('sheet-picker').hidden=true;$('worksheet').replaceChildren();$('file-type').textContent='FILE';
+  $('validation').hidden=true;$('validation').replaceChildren();$('warning-check-wrap').hidden=true;
+  $('stats').hidden=true;$('empty-preview').hidden=false;$('email-preview').hidden=true;$('email-body').replaceChildren();
+  for(const id of ['filename','file-size','import-status','selected-count','preview-subject','recipient-error'])$(id).textContent='';
+  $('import-status').classList.remove('error');
+  $('preview-recipients').textContent='Add your recipients';$('recipient-count').textContent='0 recipients';$('preview-to-label').textContent='TO';
+  $('review-intro').textContent='Your dates and validation results will appear after you choose a file.';
+  $('email-help').textContent='Review the schedule to unlock email preparation. Then copy the email, open a draft, paste, and send from your email app.';
+  $('preview-tag').textContent='WAITING FOR FILE';$('preview-tag').className='tag';
+  for(const id of ['copy-email','open-email','download'])$(id).disabled=true;
+  $('step1').className='active';$('step2').className='';$('step3').className='';
+  if($('copy-fallback').open)$('copy-fallback').close();
+  clearTimeout(toastTimer);$('toast').hidden=true;
+  if(message)toast('Schedule and recipient information cleared from this tab.');
 }
-function invalidate() { epoch++; preview = null; $('previews').replaceChildren(); $('send-bar').hidden = true; $('empty-preview').hidden = false; update(); }
-function rows() { return result?.rows.filter(r => selected.has(r.date)).map(({department,date,name,location,end}) => ({department,date,name,location,end})) || []; }
-function update() {
-  const valid = result && !result.errors.length && rows().length && $('review-source').checked && (!result.warnings.length || $('review-warnings').checked) && !dirty && auth?.user?.approved;
-  $('prepare').disabled = !valid || busy;
-  $('send').disabled = busy || !auth?.connected || !preview || !$('previews').querySelector('input[data-review]:checked:not(:disabled)');
-  for (const id of ['file','sheet','clear-file','review-source','review-warnings','save-settings','connect','disconnect','test-mail','refresh-users','signout']) $(id).disabled = busy || (['disconnect','test-mail'].includes(id) && !auth?.connected);
-  $('date-fieldset').disabled = busy || !result || Boolean(result.errors.length);
-  $('review-source').disabled = busy || !result || Boolean(result.errors.length);
-  $('admin-details').querySelectorAll('input,textarea,select,button').forEach(el => {el.disabled = busy;});
-  $('send-explanation').textContent = auth?.connected ? 'Checked emails will be sent from ' + auth.sender + '. Microsoft will save sent messages in that mailbox.' : 'Victor needs to connect the mailbox before these emails can be sent.';
-}
-async function load() {
-  try {
-    auth = await api('session');
-    $('signout').hidden = !auth.user;
-    $('identity').textContent = auth.user ? auth.user.name + ' · ' + auth.user.email : 'Approved work accounts only';
-    $('connection-label').textContent = auth.connected ? 'Victor’s mailbox connected' : auth.user?.approved ? 'Mailbox connection needed' : 'Sign-in required';
-    document.querySelector('.connection').classList.toggle('connected', Boolean(auth.connected));
-    $('gate').hidden = Boolean(auth.user?.approved); $('workspace').hidden = !auth.user?.approved;
-    $('gate-title').textContent = auth.user ? 'Waiting for Victor’s approval' : 'Sign in to prepare schedules';
-    $('gate-message').textContent = auth.user ? 'Your access request is ready for Victor to review. Once approved, select “Check access again”.' : 'Use your Six Flags Microsoft account. Victor controls who can view reports and send department emails.';
-    $('signin').hidden = Boolean(auth.user); $('refresh-access').hidden = !auth.user;
-    if (!auth.user?.approved) { clearSchedule(); return; }
-    const data = await api('settings'); revision = data.revision; routing.load(data.settings); dirty = false; $('settings-status').textContent = '';
-    $('owner').hidden = !auth.user.owner;
-    $('mailbox-note').textContent = auth.connected ? 'Your mailbox stays connected when you sign out of this app. Approved staff can send department emails through it.' : 'Connect victor.pena@sixflags.com once to enable sending for approved staff. Microsoft may occasionally ask you to reconnect.';
-    $('connect').textContent = auth.connected ? 'Reconnect my mailbox' : 'Connect my mailbox';
-    if (auth.user.owner) await loadUsers();
-    update();
-  } catch (e) {
-    $('gate').hidden = false; $('workspace').hidden = true; $('gate-title').textContent = e.code === 'setup_required' ? 'Microsoft setup is still needed' : 'Connection unavailable';
-    $('gate-message').textContent = e.message; $('connection-label').textContent = 'Setup needed'; $('signin').hidden = true; $('refresh-access').hidden = false;
-  }
-}
-function clearSchedule() {
-  epoch++; result = null; selected = new Set(); workbook = null; preview = null;
-  $('file').value = ''; $('file-summary').hidden = true; $('dropzone').hidden = false; $('sheet-wrap').hidden = true; $('sheet').replaceChildren();
-  $('dates').innerHTML = '<span class="helper">Load a report to choose dates.</span>'; $('validation').replaceChildren();
-  $('review-source').checked = false; $('review-warnings').checked = false; $('warning-wrap').hidden = true;
-  routing.setRows([], selected); invalidate();
-}
-function setResult(next) {
-  result = next; selected = new Set(next.rows.map(r => r.date));
-  $('validation').innerHTML = (next.errors.length ? `<div class="bad"><strong>Correct the source report</strong><ul>${next.errors.slice(0,20).map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '<p class="good">✓ Shift structure checked</p>') +
-    (next.warnings.length ? `<div class="warn"><strong>Review these warnings</strong><ul>${next.warnings.slice(0,20).map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>` : '');
-  $('dates').innerHTML = [...selected].sort().map(d => `<label class="date-chip"><input type="checkbox" value="${d}" checked>${esc(dateLabel(d, true))}</label>`).join('');
-  $('warning-wrap').hidden = !next.warnings.length; $('review-source').checked = false; $('review-warnings').checked = false;
-  routing.setRows(next.rows, selected); invalidate();
+function validationBox(kind,title,items) {
+  return `<div class="validation-box ${kind}"><strong>${esc(title)}</strong>${items.length?`<ul>${items.slice(0,20).map(t=>`<li>${esc(t)}</li>`).join('')}</ul>${items.length>20?`<p>Plus ${items.length-20} more issues. Correct the source and try again.</p>`:''}`:''}</div>`;
 }
 async function importFile(file) {
-  if (busy || !auth?.user?.approved) return;
-  clearSchedule(); const token = epoch;
-  if (!file) return;
-  if (!/\.(xlsx|csv)$/i.test(file.name) || file.size > 5 * 1024 * 1024) { toast('Choose a CSV or XLSX report smaller than 5 MB.', true); return; }
+  reset(false);const request=epoch;
+  if(!file)return;
+  if(!/\.(csv|xlsx)$/i.test(file.name)){toast('Choose a .csv or .xlsx file exported from the weekly schedule report.',true);return;}
+  if(file.size>5*1024*1024){toast('This file is larger than 5 MB. Export a single schedule period.',true);return;}
+  $('import-status').textContent='Reading and checking your schedule…';
   try {
-    const bytes = await file.arrayBuffer(); if (token !== epoch) return;
-    $('file-summary').hidden = false; $('file-name').textContent = file.name; $('dropzone').hidden = true;
-    $('validation').textContent = 'Reading and checking your report…';
-    if (/\.xlsx$/i.test(file.name)) {
-      const excel = await import('./excel.mjs'); if (token !== epoch) return;
-      workbook = {...excel.openWorkbook(bytes), organize: excel.organizeWorksheet};
-      $('sheet-wrap').hidden = false;
-      $('sheet').innerHTML = '<option value="">Choose a worksheet</option>' + workbook.sheets.map((s,i) => `<option value="${i}">${esc(s)}</option>`).join('');
-      if (workbook.sheets.length === 1) { $('sheet').value = '0'; selectSheet(); }
-      else $('validation').textContent = 'Choose the worksheet containing the weekly schedule.';
-    } else setResult(organize(decodeCsv(bytes)));
-  } catch (e) { if (token === epoch) {clearSchedule(); toast(e.message, true);} }
-}
-function selectSheet() {
-  result = null; selected = new Set(); $('review-source').checked = false; $('review-warnings').checked = false;
-  $('dates').replaceChildren(); $('validation').replaceChildren(); routing.setRows([], selected); invalidate();
-  if ($('sheet').value === '' || !workbook) return;
-  try { setResult(workbook.organize(workbook.workbook, workbook.sheets[Number($('sheet').value)])); } catch (e) { toast(e.message, true); }
-}
-async function prepare() {
-  if ($('prepare').disabled) return;
-  busy = true; update(); const token = epoch;
-  try {
-    const sourceRows = rows(); const data = await api('preview', {rows: sourceRows, reviewed: true});
-    if (epoch !== token) return;
-    preview = {...data, rows: sourceRows};
-    $('previews').innerHTML = data.messages.map(m => `<article class="card email-card"><details open><summary>${esc(m.label)} · ${m.count} shift${m.count === 1 ? '' : 's'}</summary><p class="recipient-line"><strong>To:</strong> ${esc(m.to.join('; '))}${m.cc.length ? '<br><strong>CC:</strong> ' + esc(m.cc.join('; ')) : ''}</p><p class="subject">${esc(m.subject)}</p><div class="email-content">${m.html}</div></details><label class="check"><input type="checkbox" data-review="${m.departmentId}"><span>I reviewed this department’s recipients and schedule.</span></label><span class="send-status" id="status-${m.departmentId}" role="status"></span></article>`).join('');
-    $('send-result').textContent = ''; $('empty-preview').hidden = true; $('send-bar').hidden = false;
-  } catch (e) { toast(e.message, true); }
-  finally { busy = false; update(); }
-}
-async function send() {
-  if ($('send').disabled || !preview) return;
-  const checked = [...$('previews').querySelectorAll('input[data-review]:checked:not(:disabled)')];
-  busy = true; update();
-  try {
-    for (const input of checked) {
-      const label = $('status-' + input.dataset.review); label.textContent = 'Submitting to Microsoft…';
-      try {
-        const r = await api('send', {rows: preview.rows, token: preview.token, departmentId: input.dataset.review});
-        label.textContent = r.duplicate ? 'Already accepted by Microsoft. No duplicate sent.' : 'Accepted by Microsoft. Final delivery is handled by Outlook.';
-        input.disabled = true;
-      } catch (e) {
-        label.textContent = e.message;
-        if (['delivery_uncertain','delivery_in_progress'].includes(e.code)) input.disabled = true;
-        if (['mailbox_disconnected','reconnect_required'].includes(e.code)) auth.connected = false;
-        throw e;
+    const buffer=await file.arrayBuffer();if(request!==epoch)return;
+    $('dropzone').hidden=true;$('file-info').hidden=false;$('filename').textContent=file.name;$('file-size').textContent=`${(file.size/1024).toFixed(1)} KB · read on this device`;
+    $('file-type').textContent=/\.xlsx$/i.test(file.name)?'XLSX':'CSV';
+    if(/\.xlsx$/i.test(file.name)) {
+      const excel=await import('./excel.mjs');if(request!==epoch)return;
+      excelSource={...excel.openWorkbook(buffer),organize:excel.organizeWorksheet};
+      $('sheet-picker').hidden=false;
+      $('worksheet').innerHTML='<option value="">Choose a worksheet…</option>'+excelSource.sheets.map((name,index)=>`<option value="${index}">${esc(name)}</option>`).join('');
+      $('file').value='';
+      if(excelSource.sheets.length>1) {
+        $('import-status').textContent=`${excelSource.sheets.length} worksheets found. Choose the weekly schedule worksheet below. Only the selected worksheet will be included.`;
+        return;
       }
+      $('worksheet').value='0';
+      selectWorksheet();
+      return;
     }
-    $('send-result').textContent = 'The checked emails were accepted by Microsoft. Check Sent Items for the messages.';
-  } catch (e) { $('send-result').textContent = 'Stopped: ' + e.message; toast(e.message, true); }
-  finally { busy = false; update(); }
+    result=organize(decodeCsv(buffer));
+    showResult();
+  } catch(e) {if(request!==epoch)return;reset(false);$('import-status').textContent=e.message;$('import-status').classList.add('error');toast('The file could not be converted. Check the message below the upload area.',true);}
 }
-async function loadUsers() {
-  const u = await api('admin/users');
-  $('staff-list').innerHTML = `<h4>Awaiting approval (${u.pending.length})</h4>` + u.pending.map(p => `<div class="staff-row"><div>${esc(p.name)}<small>${esc(p.email)}</small></div><button class="secondary" data-user="${p.oid}" data-action="approve">Approve</button></div>`).join('') + `<h4>Approved (${u.approved.length})</h4>` + u.approved.map(p => `<div class="staff-row"><div>${esc(p.name)}<small>${esc(p.email)}</small></div><button class="quiet" data-user="${p.oid}" data-action="remove">Remove access</button></div>`).join('');
+function selectWorksheet() {
+  if(!excelSource)return;
+  // Changing worksheets clears the prior schedule review and preview; recipient settings remain in this tab.
+  const source=excelSource, index=$('worksheet').value;
+  const filename=$('filename').textContent, size=$('file-size').textContent;
+  reset(false);excelSource=source;
+  $('dropzone').hidden=true;$('file-info').hidden=false;$('filename').textContent=filename;$('file-size').textContent=size;$('file-type').textContent='XLSX';
+  $('sheet-picker').hidden=false;
+  $('worksheet').innerHTML='<option value="">Choose a worksheet…</option>'+source.sheets.map((name,i)=>`<option value="${i}">${esc(name)}</option>`).join('');
+  $('worksheet').value=index;
+  if(index===''){$('import-status').textContent='Choose the worksheet containing the original weekly schedule.';return;}
+  try {
+    const name=source.sheets[Number(index)];
+    result=source.organize(source.workbook,name);
+    showResult();
+    $('import-status').textContent=`Worksheet: ${name}. Only this worksheet is included.`;
+  } catch(e) {
+    $('import-status').textContent=e.message;$('import-status').classList.add('error');
+  }
 }
-function action(id, fn) { $(id).addEventListener('click', () => Promise.resolve().then(fn).catch(e => toast(e.message, true))); }
-action('refresh-access', load);
-action('signout', async () => { await api('logout', {}); clearSchedule(); routing.reset(); location.replace('/'); });
-action('connect', async () => { const r = await api('admin/connect', {}); location.assign(r.url); });
-action('disconnect', async () => { await api('admin/disconnect', {}); invalidate(); await load(); toast('Mailbox disconnected. New emails cannot be sent.'); });
-let testRequestId;
-action('test-mail', async () => {
-  busy = true; update(); testRequestId ||= crypto.randomUUID();
-  try { const r = await api('admin/test', {requestId: testRequestId}); $('test-result').textContent = r.duplicate ? 'This test was already accepted. Check your work inbox.' : 'Test accepted by Microsoft. Check your work inbox and Sent Items.'; testRequestId = null; }
-  finally { busy = false; update(); }
-});
-action('save-settings', async () => { const r = await api('admin/settings', {settings: routing.settings, revision}); revision = r.revision; routing.load(r.settings); dirty = false; invalidate(); $('settings-status').textContent = 'Saved for everyone'; });
-action('refresh-users', loadUsers);
-$('staff-list').addEventListener('click', async e => { const b = e.target.closest('[data-user]'); if (!b) return; try { await api('admin/users', {oid: b.dataset.user, action: b.dataset.action}); await loadUsers(); } catch (err) { toast(err.message, true); } });
-$('file').addEventListener('change', e => importFile(e.target.files[0]));
-$('sheet').addEventListener('change', selectSheet);
-action('clear-file', clearSchedule);
-for (const type of ['dragenter','dragover']) $('dropzone').addEventListener(type, e => {e.preventDefault(); if (!busy) $('dropzone').classList.add('drag');});
-for (const type of ['dragleave','drop']) $('dropzone').addEventListener(type, e => {e.preventDefault(); $('dropzone').classList.remove('drag');});
-$('dropzone').addEventListener('drop', e => {if (e.dataTransfer.files.length === 1) importFile(e.dataTransfer.files[0]); else toast('Choose one report at a time.', true);});
-$('dates').addEventListener('change', () => {selected = new Set([...$('dates').querySelectorAll('input:checked')].map(x => x.value)); routing.setDates(selected); $('review-source').checked = false; invalidate();});
-for (const id of ['review-source','review-warnings']) $(id).addEventListener('change', invalidate);
-$('previews').addEventListener('change', update);
-action('prepare', prepare); action('send', send);
-const notices = {connected: 'Victor’s mailbox is connected.', consent: 'Microsoft sign-in was cancelled or needs company approval. If you see “Need admin approval”, Six Flags IT must approve this app.', signin_failed: 'Sign-in could not be completed. Check the account, Microsoft app settings, and company permissions, then try again.'};
-const notice = new URL(location.href).searchParams.get('notice');
-if (notice) { history.replaceState({}, '', '/'); if (notices[notice]) toast(notices[notice], notice !== 'connected'); }
-window.addEventListener('pagehide', clearSchedule);
-window.addEventListener('pageshow', e => {if (e.persisted) location.reload();});
-load();
+function showResult() {
+    $('file').value='';$('import-status').textContent='';
+    $('validation').hidden=false;
+    $('validation').innerHTML=(result.errors.length?validationBox('bad',`${result.errors.length} issue${result.errors.length===1?'':'s'} to resolve`,result.errors):validationBox('good','✓ Shift structure checked',[]))+(result.warnings.length?validationBox('warn','Source report needs a review',result.warnings):'');
+    $('warning-check-wrap').hidden=!result.warnings.length;
+    $('review-intro').textContent=result.errors.length?'Correct these issues in the source export, then choose the file again. Email and download are blocked to avoid an incomplete schedule.':'Departments come from the department sections in the original report. Each row pairs the final segment’s work location and end time. A fallback location from the report section is labeled “report location”.';
+    const dates=[...new Set(result.rows.map(r=>r.date))].sort();selection=new Set(dates);
+    $('dates').innerHTML=dates.map(d=>`<label class="date-chip"><input type="checkbox" value="${d}" checked><span>${esc(dateLabel(d,true))}</span></label>`).join('');
+    $('date-fieldset').disabled=!!result.errors.length;
+    routing.setRows(result.rows,selection);
+    $('department').innerHTML='<option value="">Choose a department</option>'+routing.settings.groups.map(group=>`<option value="${group.id}">${esc(group.label)}</option>`).join('');
+    $('department').disabled=!!result.errors.length;$('review-check').disabled=!!result.errors.length;
+    $('intro').value='The following is a list of 15-year-olds scheduled in your department for the dates below.';
+    $('signature').value='Victor Peña\nHR / Wardrobe\nvictor.pena@sixflags.com';
+    $('stats').hidden=false;$('empty-preview').hidden=true;$('email-preview').hidden=false;
+    autoSubject();render();
+}
+function autoSubject() {
+  const dates=[...new Set(selectedRows().map(r=>r.date))].sort(),group=currentBatch();
+  $('subject').value=group?`15-year-old schedules · ${group.label}${dates.length?' · '+dateLabel(dates[0],true)+(dates.length>1?' – '+dateLabel(dates.at(-1),true):''):''}`:'Choose a department';
+}
+
+function render() {
+  if(!result)return;
+  const rows=selectedRows(),batch=currentBatch(),ready=copyAllowed();
+  $('to').value=batch?.to.join('; ')||'';$('cc').value=batch?.cc.join('; ')||'';
+  const address=recipients($('to').value);
+  $('email-fields').disabled=!ready;
+  $('selected-count').textContent=`${rows.length} of ${result.rows.length} shifts included${batch?' · '+batch.label:''}.`;
+  $('stat-employees').textContent=new Set(rows.map(r=>r.name)).size;$('stat-shifts').textContent=rows.length;$('stat-dates').textContent=new Set(rows.map(r=>r.date)).size;
+  $('stat-validation').textContent=result.errors.length?'Needs fixing':result.warnings.length?'Review needed':'Passed';
+  if(ready)$('stat-validation').textContent='Reviewed';
+  $('preview-subject').textContent=$('subject').value||'Shift end times';
+  $('preview-recipients').textContent=address.addresses.length?address.addresses.join(', ')+(batch?.cc.length?' | CC: '+batch.cc.join(', '):''):'Choose a department and load its recipients';
+  $('preview-to-label').textContent=$('bcc').checked?'BCC':'TO';
+  $('recipient-count').textContent=`${address.addresses.length} recipient${address.addresses.length===1?'':'s'}${address.duplicates?' · duplicates removed':''}`;
+  $('recipient-error').textContent=batch?batch.issues.join(' '):'Choose a single department to prepare its email.';
+  $('email-body').innerHTML=rows.length?emailHtml(rows,$('intro').value,$('signature').value):'<p>Choose a department with shifts on the selected dates. Its email will contain only that group’s assigned employees.</p>';
+  $('download').disabled=!ready;$('copy-email').disabled=!ready;
+  $('open-email').disabled=!ready||!address.addresses.length||!!address.invalid.length||address.addresses.length>50||!$('subject').value.trim()||lastCopied!==emailSnapshot();
+  $('preview-tag').textContent=result.errors.length?'FIX SOURCE FILE':ready?'READY TO COPY':batch&&!batch.ready?'ADD RECIPIENTS':'REVIEW REQUIRED';$('preview-tag').classList.toggle('ready',ready);
+  $('step1').className='done';$('step2').className=ready?'done':'active';$('step3').className=ready?'active':'';
+  $('email-help').textContent=ready?'1. Copy this department’s email. 2. Open its draft. 3. Paste the schedule and send from victor.pena@sixflags.com. Repeat for the next department.':'Choose a department, complete its recipient list, then review the schedule to unlock email preparation.';
+}
+function downloadCsv() {
+  if(!copyAllowed())return;
+  const rows=selectedRows(),dates=[...new Set(rows.map(r=>r.date))].sort();
+  const url=URL.createObjectURL(new Blob([toCsv(rows)],{type:'text/csv;charset=utf-8;'}));
+  const a=document.createElement('a');a.href=url;a.download=`shift_end_times_by_department_${dates[0]}${dates.length>1?'_to_'+dates.at(-1):''}.csv`;document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast('CSV download requested. This copy will remain in your Downloads folder.');
+}
+async function copyEmail() {
+  if(!copyAllowed())return;
+  const request=epoch,snapshot=emailSnapshot(),rows=selectedRows(),plain=emailText(rows,$('intro').value,$('signature').value),html=emailHtml(rows,$('intro').value,$('signature').value);
+  try {
+    if(!navigator.clipboard?.write||typeof ClipboardItem==='undefined')throw new Error('Clipboard unavailable');
+    await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([plain],{type:'text/plain'})})]);
+    if(request===epoch&&snapshot===emailSnapshot()){lastCopied=snapshot;render();toast('This department’s email copied. Open its draft and paste into the message body.');}
+  } catch {
+    if(request!==epoch)return;
+    fallbackSnapshot=snapshot;$('fallback-text').value=plain;$('copy-fallback').showModal();$('fallback-text').select();
+  }
+}
+function openEmail() {
+  if($('open-email').disabled||!copyAllowed())return;
+  const {addresses,invalid}=recipients($('to').value);if(invalid.length||!addresses.length)return;
+  const field=$('bcc').checked?'bcc':'to';
+  // Leave the body blank so the user can paste the rich table without a long mailto URL.
+  const uri=`mailto:?${field}=${encodeURIComponent(addresses.join(','))}${currentBatch()?.cc.length?'&cc='+encodeURIComponent(currentBatch().cc.join(',')):''}&subject=${encodeURIComponent($('subject').value.trim())}`;
+  if(uri.length>1800){toast('This recipient list is too long for a reliable email link. Copy the table and paste the addresses into your email app.',true);return;}
+  window.location.href=uri;toast('Email draft requested. Paste the copied schedule, check recipients, and send from your email app.');
+}
+$('file').addEventListener('change',e=>importFile(e.target.files[0]));
+$('worksheet').addEventListener('change',selectWorksheet);
+$('replace').addEventListener('click',()=>$('file').click());
+$('clear').addEventListener('click',()=>reset());
+for(const event of ['dragenter','dragover'])$('dropzone').addEventListener(event,e=>{e.preventDefault();$('dropzone').classList.add('drag');});
+for(const event of ['dragleave','drop'])$('dropzone').addEventListener(event,e=>{e.preventDefault();$('dropzone').classList.remove('drag');});
+$('dropzone').addEventListener('drop',e=>{const files=e.dataTransfer.files;if(files.length!==1){toast('Choose one CSV or XLSX file at a time.',true);return;}importFile(files[0]);});
+$('dates').addEventListener('change',()=>{selection=new Set([...$('dates').querySelectorAll('input:checked')].map(i=>i.value));routing.setDates(selection);$('review-check').checked=false;autoSubject();render();});
+$('department').addEventListener('change',()=>{chosenDepartment=$('department').value;$('review-check').checked=false;autoSubject();render();});
+for(const id of ['review-check','warning-check','bcc'])$(id).addEventListener('change',render);
+for(const id of ['subject','intro','signature'])$(id).addEventListener('input',render);
+$('download').addEventListener('click',downloadCsv);$('copy-email').addEventListener('click',copyEmail);$('open-email').addEventListener('click',openEmail);
+$('select-fallback').addEventListener('click',()=>{$('fallback-text').focus();$('fallback-text').select();});
+$('close-fallback').addEventListener('click',()=>{if(fallbackSnapshot===emailSnapshot())lastCopied=fallbackSnapshot;$('fallback-text').value='';$('copy-fallback').close();render();});
+$('copy-fallback').addEventListener('close',()=>$('fallback-text').value='');
+window.addEventListener('pagehide',()=>{routing.reset();reset(false);});
+window.addEventListener('pageshow',e=>{if(e.persisted){routing.reset();reset(false);}});
+reset(false);

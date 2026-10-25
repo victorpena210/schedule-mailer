@@ -1,20 +1,25 @@
-import {readFile,readdir} from 'node:fs/promises';
-import {resolve} from 'node:path';
+import {readdir, readFile, access} from 'node:fs/promises';
 import {spawnSync} from 'node:child_process';
+import path from 'node:path';
 
-async function files(dir) {
-  const out=[];
-  for(const e of await readdir(dir,{withFileTypes:true})) { const p=resolve(dir,e.name); if(e.isDirectory())out.push(...await files(p)); else out.push(p); }
-  return out;
-}
-for (const directory of ['server','netlify/functions','public']) {
-  for(const path of await files(directory)) {
-    if(path.endsWith('.mjs')) { const result=spawnSync(process.execPath,['--check',path],{stdio:'inherit'}); if(result.status)process.exit(result.status); }
-    if(directory==='public' && /recipients\.json|\.env|package-lock|README|SETUP/i.test(path)) throw new Error('A private file was included in the public directory: '+path);
-    if(directory==='public' && !path.includes('/vendor/')) {
-      const content=await readFile(path,'utf8');
-      if(/Joseph\.Brown@|cynthia\.morrison@|Amber\.Stahl@|MS_CLIENT_SECRET|TOKEN_ENCRYPTION_KEY/i.test(content)) throw new Error('Private configuration in public output: '+path);
-    }
+async function walk(dir) {
+  const files=[];
+  for(const item of await readdir(dir,{withFileTypes:true})) {
+    const name=path.join(dir,item.name);
+    files.push(...(item.isDirectory()?await walk(name):[name]));
   }
+  return files;
 }
-console.log('Build checks passed. Public assets and private functions are separated.');
+const files=await walk('public');
+for(const file of files) {
+  if(/\.mjs$/.test(file)) {
+    const checked=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});
+    if(checked.status!==0)throw new Error(checked.stderr);
+  }
+  if(/recipients.*\.json$|(^|\/)\.env/.test(file))throw new Error('Private settings must not be published.');
+}
+const html=await readFile('public/index.html','utf8');
+for(const match of html.matchAll(/(?:src|href)="([^"#]+)"/g)) {
+  if(!/^(https?:|mailto:)/.test(match[1]))await access(path.join('public',match[1]));
+}
+console.log('Static app syntax and published assets checked. No server setup required.');

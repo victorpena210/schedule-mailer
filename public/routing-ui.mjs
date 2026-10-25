@@ -61,7 +61,6 @@ export function mountRouting(onChange,notify) {
   drawContacts();drawSummary();
   return {
     get settings(){return settings;},
-    load(next){revision++;settings=parseSettings(next);drawContacts();drawAssignments();drawSummary();$('recipient-file-status').textContent='Saved department settings loaded.';},
     setRows(next,nextDates){rows=next;dates=nextDates;drawAssignments();drawSummary();},
     setDates(next){dates=next;drawSummary();},
     reset(){revision++;settings=emptySettings();rows=[];dates=new Set();$('recipient-file-status').textContent='';$('recipient-file').value='';drawContacts();drawAssignments();drawSummary();}

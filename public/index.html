@@ -1,53 +1,43 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="referrer" content="no-referrer">
-  <meta name="description" content="Prepare and review separate department emails from the weekly schedule.">
-  <title>Schedule Mailer · HR / Wardrobe</title>
-  <link rel="stylesheet" href="styles.css"><script type="module" src="app.mjs"></script>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Turn a weekly employee CSV or Excel workbook into a clear schedule and an email-ready table. Files are processed in your browser without retaining schedule data.">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Schedule Mailer · Organize. Review. Email.</title>
+<link rel="stylesheet" href="styles.css"><script type="module" src="app.mjs"></script>
 </head>
 <body>
-  <header><a class="brand" href="/">▤ <strong>Schedule Mailer</strong></a><span class="eyebrow">HR / WARDROBE</span><button id="signout" class="quiet" hidden>Sign out</button></header>
-  <main>
-    <div class="intro"><div><span class="eyebrow">A CLEAR HANDOFF FOR EVERY DEPARTMENT</span><h1>The right schedule.<br>The right people.</h1><p>Upload the weekly report, review each department’s email, and send through Victor’s connected mailbox.</p></div><div class="connection" aria-live="polite"><span class="status-dot"></span><strong id="connection-label">Checking connection…</strong><small id="identity"></small></div></div>
-    <section id="gate" class="card gate"><h2 id="gate-title">Checking access</h2><p id="gate-message">Connecting to Schedule Mailer…</p><a id="signin" class="button primary" href="/api/auth/login" hidden>Sign in with Microsoft</a><button id="refresh-access" class="secondary" hidden>Check access again</button></section>
-    <div id="workspace" hidden>
-      <section id="owner" class="card owner" hidden>
-        <div class="section-heading"><div><span class="eyebrow">YOUR SENDING ACCOUNT</span><h2>Mailbox connection</h2></div><span class="badge">Owner controls</span></div>
-        <p id="mailbox-note"></p><div class="actions"><button id="connect" class="primary">Connect my mailbox</button><button id="test-mail" class="secondary" disabled>Send a test to my work email</button><button id="disconnect" class="quiet" disabled>Disconnect mailbox</button></div><p id="test-result" class="helper" role="status"></p>
-        <details id="admin-details"><summary>Department recipients & staff access</summary>
-          <h3>Department recipients</h3><p>These addresses and mappings apply to everyone using this app. Changes take effect after you save.</p>
-          <div class="actions"><label class="button secondary">Import recipient settings<input id="recipient-file" type="file" accept=".json,application/json" class="visually-hidden"></label><button id="export-recipients" class="quiet">Download recipient settings</button></div><p id="recipient-file-status" class="helper"></p>
-          <div id="contact-groups"></div><details id="mapping-details" hidden><summary>Match departments in this report</summary><div id="department-mapping"></div></details>
-          <div class="actions"><button id="save-settings" class="primary">Save department settings</button><span id="settings-status" class="helper" role="status"></span></div>
-          <h3>Approved staff</h3><p>Have a coworker open this site and sign in with their work account. Their access request will appear here. Approve only staff who should see the full report and send these emails.</p>
-          <button id="refresh-users" class="secondary">Refresh access requests</button><div id="staff-list"></div>
-        </details>
-      </section>
-      <div class="work-grid">
-        <section class="card upload-card"><span class="step">01 / UPLOAD</span><h2>Start with the report</h2><p>Use the original Employee Schedule – Weekly export, already filtered to 15-year-olds.</p>
-          <label id="dropzone" class="dropzone"><span class="upload-icon">↑</span><strong>Drop your Excel or CSV file here</strong><span>or choose a file · up to 5 MB</span><input id="file" type="file" accept=".csv,.xlsx" class="visually-hidden"></label>
-          <div id="file-summary" hidden><strong id="file-name"></strong><button id="clear-file" class="quiet">Clear report</button></div>
-          <label id="sheet-wrap" hidden>Worksheet<select id="sheet"></select></label>
-          <div id="validation" class="validation" role="status"></div>
-          <fieldset id="date-fieldset" disabled><legend>Dates to include</legend><div id="dates"><span class="helper">Load a report to choose dates.</span></div></fieldset>
-          <div id="routing-summary"></div><p id="routing-held" class="warning" hidden></p>
-          <label class="check"><input id="review-source" type="checkbox" disabled><span>I checked the selected dates, employee names, locations, and end times. This report contains only 15-year-olds.</span></label>
-          <label id="warning-wrap" class="check" hidden><input id="review-warnings" type="checkbox"><span>I checked the report warnings against the original schedule.</span></label>
-          <button id="prepare" class="primary wide" disabled>Prepare department emails</button>
-          <p class="helper">The original file stays in this tab. Preparing a preview sends only the selected schedule rows to the private sending service.</p>
-        </section>
-        <section class="review-column"><div class="section-heading"><div><span class="step">02 / REVIEW & SEND</span><h2>One email per department</h2></div></div>
-          <div id="empty-preview" class="card empty-preview"><div class="paper-icon">▤</div><h3>Every department gets its own list.</h3><p>Preview recipients and the exact email here before anything is sent.</p><div class="tags"><span>Employee</span><span>Location</span><span>End time</span></div></div>
-          <div id="previews"></div>
-          <div id="send-bar" class="card send-bar" hidden><p id="send-explanation"></p><button id="send" class="primary wide" disabled>Send reviewed emails</button><p id="send-result" class="helper" role="status"></p></div>
-        </section>
-      </div>
-      <details class="privacy"><summary>What is saved?</summary><p>The workbook is read in this tab. Selected rows are sent to the server to prepare and send emails; the app does not store the workbook or employee schedule rows. Refreshing or clearing the report removes the browser’s working copy.</p><p>The server stores an encrypted mailbox connection, department settings, staff permissions, temporary sign-in records, and minimal send receipts for duplicate protection. Receipts contain the sending staff member’s account ID, department, time, count, and result, plus a keyed fingerprint—not employee names or the email body. Microsoft stores sent messages, and Netlify/Microsoft may retain operational logs. People with administrative access to those services control that storage.</p></details>
-    </div>
-    <footer><span>Schedule Mailer</span><span>Organize. Review. Send.</span></footer>
-  </main>
-  <div id="toast" role="status" aria-live="polite" hidden></div>
+<header class="topbar"><a class="brand" href="#"><span class="brand-icon" aria-hidden="true">▤</span> Schedule<span>Mailer</span></a><div class="topright"><span class="privacy-badge"><span></span> Files stay in this tab</span><button id="clear" class="quiet" type="button">Clear everything <span aria-hidden="true">↻</span></button></div></header>
+<main>
+<div class="heading"><div><p class="eyebrow">YOUR WEEKLY SCHEDULE, READY TO SHARE</p><h1>From schedule to inbox.</h1><p class="lede">One schedule file. A separate email for each department.</p></div><a href="#privacy" class="privacy-link">How your information is handled <span aria-hidden="true">↗</span></a></div>
+<nav class="steps" aria-label="Workflow"><a href="#upload" id="step1" class="active"><b>01</b><span>Choose your file<small>The original weekly export</small></span></a><a href="#review" id="step2"><b>02</b><span>Review the schedule<small>Check locations and end times</small></span></a><a href="#compose" id="step3"><b>03</b><span>Prepare your email<small>Copy, open a draft, and send</small></span></a></nav>
+<div class="workspace">
+<aside class="controls">
+<section class="panel" id="upload"><div class="section-top"><span class="number">01</span><h2>Choose your schedule</h2></div><label class="dropzone" id="dropzone" for="file"><span class="upload-symbol" aria-hidden="true">↥</span><strong>Drop your CSV or XLSX here</strong><span>or <u>browse files</u></span><small>Original weekly export · CSV or XLSX · up to 5 MB</small><input type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" id="file" aria-label="Choose original weekly schedule CSV or Excel workbook"></label><div id="file-info" class="file-info" hidden><span class="file-icon" id="file-type">FILE</span><div><strong id="filename"></strong><span id="file-size"></span></div><button id="replace" class="quiet" type="button">Change</button></div><p class="helper">Reads departments, work locations, and final shift end times from the original weekly CSV or XLSX export. The file is read on your device.</p><div id="sheet-picker" hidden><label class="field-label" for="worksheet">Worksheet</label><select id="worksheet" aria-describedby="worksheet-help"></select><p class="helper" id="worksheet-help">Choose the original weekly schedule. Only the selected worksheet is included; changing it clears your review and email fields while keeping recipient settings.</p></div><p id="import-status" class="inline-status" role="status"></p></section>
+<section class="panel" id="review"><div class="section-top"><span class="number">02</span><h2>Review &amp; choose dates</h2></div><p class="helper" id="review-intro">Your dates and validation results will appear after you choose a file.</p><div id="validation" hidden></div><fieldset id="date-fieldset" disabled><legend>Include in this email</legend><div id="dates" class="date-options"><span class="empty-control">No schedule loaded</span></div></fieldset><label class="field-label" for="department">Department email to prepare</label><select id="department" disabled><option value="">Choose a department</option></select><p id="selected-count" class="helper"></p><label class="check-row" id="warning-check-wrap" hidden><input type="checkbox" id="warning-check"><span>I reviewed the source warnings and verified this schedule.</span></label><label class="check-row"><input type="checkbox" id="review-check" disabled><span>I checked the departments, dates, work locations, and shift end times.</span></label></section>
+<section class="panel" id="routing"><div class="section-top"><h2>Department recipients</h2></div>
+<p class="helper">Load your private recipient settings, then prepare each department’s email separately. Each group receives only its assigned schedule rows.</p>
+<label class="field-label" for="recipient-file">Load recipient settings<input id="recipient-file" type="file" accept=".json,application/json"></label>
+<p id="recipient-file-status" class="helper" role="status"></p><div id="routing-summary" aria-live="polite"></div><p id="routing-held" class="inline-status error" hidden></p>
+<details id="mapping-details" hidden><summary>Match report departments</summary><div id="department-mapping"></div></details>
+<div id="contact-groups"></div><button id="export-recipients" class="secondary" type="button">Download recipient settings</button>
+<p class="helper subtle">Contacts stay in this tab. Keep the downloaded settings file private and separate from your Netlify website files.</p></section>
+<section class="panel" id="compose"><div class="section-top"><span class="number">03</span><h2>Prepare your email</h2></div><fieldset id="email-fields" disabled><label class="field-label" for="to">To <small>From this department’s recipient list</small></label><textarea id="to" rows="2" readonly placeholder="person@company.com, another@company.com" autocomplete="off" autocapitalize="none" spellcheck="false"></textarea><div class="recipient-meta"><span id="recipient-count">0 recipients</span><label><input type="checkbox" id="bcc"> Use BCC</label></div><label class="field-label" for="cc">CC</label><textarea id="cc" rows="2" readonly></textarea><p id="recipient-error" class="inline-status error" role="status"></p><label class="field-label" for="subject">Subject</label><input id="subject" type="text" maxlength="180" autocomplete="off"><label class="field-label" for="intro">Message</label><textarea id="intro" rows="3" autocomplete="off" placeholder="Here is the shift end times for the upcoming weekend."></textarea><label class="field-label" for="signature">Signature <small>Optional</small></label><textarea id="signature" rows="2" autocomplete="off" placeholder="Your name&#10;HR / Wardrobe"></textarea></fieldset><div class="email-actions"><button class="primary" id="copy-email" type="button" disabled><span aria-hidden="true">▣</span> Copy formatted email</button><button class="secondary" id="open-email" type="button" disabled>Open email draft <span aria-hidden="true">↗</span></button></div><p id="email-help" class="helper">Review the schedule to unlock email preparation. Then copy the email, open a draft, paste, and send from your email app.</p><p class="helper subtle">Recipients come from the selected department only. Complete missing addresses in Department recipients. You review and send each message from your email app.</p></section>
+</aside>
+<section class="preview-column" aria-label="Schedule preview">
+<div class="preview-toolbar"><div><span class="preview-dot"></span><h2>Email preview</h2><span class="tag" id="preview-tag">WAITING FOR FILE</span></div><button id="download" class="quiet" type="button" disabled>↓ Download CSV</button></div>
+<div class="stats" id="stats" hidden><div><strong id="stat-employees">0</strong><span>employees included</span></div><div><strong id="stat-shifts">0</strong><span>scheduled shifts</span></div><div><strong id="stat-dates">0</strong><span>dates selected</span></div><div class="validation-stat"><strong id="stat-validation">—</strong><span>conversion checks</span></div></div>
+<div class="paper" id="empty-preview"><div class="empty-visual" aria-hidden="true"><div class="mock-header"><i></i><i></i></div><div class="mock-row"><i></i><i></i><i></i></div><div class="mock-row"><i></i><i></i><i></i></div><div class="mock-row"><i></i><i></i><i></i></div><span class="paper-check">✓</span></div><h3>A little order for your workweek.</h3><p>Choose the original CSV or Excel workbook, load recipient settings, then choose a department to preview its employee names, work locations, and final shift end times.</p><div class="empty-labels"><span>Employee names</span><span>Work locations</span><span>End times</span></div></div>
+<div class="paper" id="email-preview" hidden><div class="mail-header"><div><span>SUBJECT</span><strong id="preview-subject"></strong></div><div><span id="preview-to-label">TO</span><p id="preview-recipients">Add your recipients</p></div></div><div id="email-body" class="email-body"></div></div>
+<div class="preview-note"><span aria-hidden="true">ⓘ</span><p>Each email contains only the selected recipient group’s departments, grouped by date, with employees listed alphabetically. Each row includes the employee, work location, and final shift end time. Locations come from the final segment; report-location fallbacks are labeled.</p></div>
+<details class="privacy-details" id="privacy"><summary>Your schedule is temporary. You stay in control.</summary><p>Schedule files and recipient settings are processed only in this browser tab. Load the original report already filtered to 15-year-olds; the app does not infer employee ages. The app does not upload them, write them to browser storage, or keep a schedule history. Refreshing, leaving the page, or choosing <strong>Clear everything</strong> resets the app. Loading a different schedule or worksheet preserves the recipient settings for this tab, while clearing the schedule review.</p><p>Copies you intentionally put on the clipboard, download, or send by email remain in those places. Your email provider may keep drafts and sent messages. Hosting sign-in and access logs are separate from schedule processing.</p></details>
+</section>
+</div>
+<footer><span>Schedule Mailer</span><span>Organize. Review. Email. Start fresh next time.</span></footer>
+</main>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="copy-fallback"><h2>Copy your email</h2><p>Your browser could not copy the formatted table. Select and copy the message below, or attach the downloaded CSV.</p><textarea id="fallback-text" rows="12" readonly aria-label="Email text to copy"></textarea><div class="dialog-actions"><button class="secondary" id="select-fallback" type="button">Select text</button><button class="primary" id="close-fallback" type="button">I copied the message</button></div></dialog>
 </body>
 </html>
