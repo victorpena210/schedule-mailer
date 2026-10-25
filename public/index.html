@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Prepare and review separate department emails from the weekly schedule.">
+  <title>Schedule Mailer · HR / Wardrobe</title>
+  <link rel="stylesheet" href="styles.css"><script type="module" src="app.mjs"></script>
+</head>
+<body>
+  <header><a class="brand" href="/">▤ <strong>Schedule Mailer</strong></a><span class="eyebrow">HR / WARDROBE</span><button id="signout" class="quiet" hidden>Sign out</button></header>
+  <main>
+    <div class="intro"><div><span class="eyebrow">A CLEAR HANDOFF FOR EVERY DEPARTMENT</span><h1>The right schedule.<br>The right people.</h1><p>Upload the weekly report, review each department’s email, and send through Victor’s connected mailbox.</p></div><div class="connection" aria-live="polite"><span class="status-dot"></span><strong id="connection-label">Checking connection…</strong><small id="identity"></small></div></div>
+    <section id="gate" class="card gate"><h2 id="gate-title">Checking access</h2><p id="gate-message">Connecting to Schedule Mailer…</p><a id="signin" class="button primary" href="/api/auth/login" hidden>Sign in with Microsoft</a><button id="refresh-access" class="secondary" hidden>Check access again</button></section>
+    <div id="workspace" hidden>
+      <section id="owner" class="card owner" hidden>
+        <div class="section-heading"><div><span class="eyebrow">YOUR SENDING ACCOUNT</span><h2>Mailbox connection</h2></div><span class="badge">Owner controls</span></div>
+        <p id="mailbox-note"></p><div class="actions"><button id="connect" class="primary">Connect my mailbox</button><button id="test-mail" class="secondary" disabled>Send a test to my work email</button><button id="disconnect" class="quiet" disabled>Disconnect mailbox</button></div><p id="test-result" class="helper" role="status"></p>
+        <details id="admin-details"><summary>Department recipients & staff access</summary>
+          <h3>Department recipients</h3><p>These addresses and mappings apply to everyone using this app. Changes take effect after you save.</p>
+          <div class="actions"><label class="button secondary">Import recipient settings<input id="recipient-file" type="file" accept=".json,application/json" class="visually-hidden"></label><button id="export-recipients" class="quiet">Download recipient settings</button></div><p id="recipient-file-status" class="helper"></p>
+          <div id="contact-groups"></div><details id="mapping-details" hidden><summary>Match departments in this report</summary><div id="department-mapping"></div></details>
+          <div class="actions"><button id="save-settings" class="primary">Save department settings</button><span id="settings-status" class="helper" role="status"></span></div>
+          <h3>Approved staff</h3><p>Have a coworker open this site and sign in with their work account. Their access request will appear here. Approve only staff who should see the full report and send these emails.</p>
+          <button id="refresh-users" class="secondary">Refresh access requests</button><div id="staff-list"></div>
+        </details>
+      </section>
+      <div class="work-grid">
+        <section class="card upload-card"><span class="step">01 / UPLOAD</span><h2>Start with the report</h2><p>Use the original Employee Schedule – Weekly export, already filtered to 15-year-olds.</p>
+          <label id="dropzone" class="dropzone"><span class="upload-icon">↑</span><strong>Drop your Excel or CSV file here</strong><span>or choose a file · up to 5 MB</span><input id="file" type="file" accept=".csv,.xlsx" class="visually-hidden"></label>
+          <div id="file-summary" hidden><strong id="file-name"></strong><button id="clear-file" class="quiet">Clear report</button></div>
+          <label id="sheet-wrap" hidden>Worksheet<select id="sheet"></select></label>
+          <div id="validation" class="validation" role="status"></div>
+          <fieldset id="date-fieldset" disabled><legend>Dates to include</legend><div id="dates"><span class="helper">Load a report to choose dates.</span></div></fieldset>
+          <div id="routing-summary"></div><p id="routing-held" class="warning" hidden></p>
+          <label class="check"><input id="review-source" type="checkbox" disabled><span>I checked the selected dates, employee names, locations, and end times. This report contains only 15-year-olds.</span></label>
+          <label id="warning-wrap" class="check" hidden><input id="review-warnings" type="checkbox"><span>I checked the report warnings against the original schedule.</span></label>
+          <button id="prepare" class="primary wide" disabled>Prepare department emails</button>
+          <p class="helper">The original file stays in this tab. Preparing a preview sends only the selected schedule rows to the private sending service.</p>
+        </section>
+        <section class="review-column"><div class="section-heading"><div><span class="step">02 / REVIEW & SEND</span><h2>One email per department</h2></div></div>
+          <div id="empty-preview" class="card empty-preview"><div class="paper-icon">▤</div><h3>Every department gets its own list.</h3><p>Preview recipients and the exact email here before anything is sent.</p><div class="tags"><span>Employee</span><span>Location</span><span>End time</span></div></div>
+          <div id="previews"></div>
+          <div id="send-bar" class="card send-bar" hidden><p id="send-explanation"></p><button id="send" class="primary wide" disabled>Send reviewed emails</button><p id="send-result" class="helper" role="status"></p></div>
+        </section>
+      </div>
+      <details class="privacy"><summary>What is saved?</summary><p>The workbook is read in this tab. Selected rows are sent to the server to prepare and send emails; the app does not store the workbook or employee schedule rows. Refreshing or clearing the report removes the browser’s working copy.</p><p>The server stores an encrypted mailbox connection, department settings, staff permissions, temporary sign-in records, and minimal send receipts for duplicate protection. Receipts contain the sending staff member’s account ID, department, time, count, and result, plus a keyed fingerprint—not employee names or the email body. Microsoft stores sent messages, and Netlify/Microsoft may retain operational logs. People with administrative access to those services control that storage.</p></details>
+    </div>
+    <footer><span>Schedule Mailer</span><span>Organize. Review. Send.</span></footer>
+  </main>
+  <div id="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

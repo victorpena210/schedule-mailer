@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "groups": [
+    {
+      "id": "food-beverage",
+      "label": "Food & Beverage",
+      "departments": [
+        "Food & Beverage",
+        "Food and Beverage",
+        "FB"
+      ],
+      "contacts": [
+        {
+          "name": "Joseph Brown",
+          "email": "Joseph.Brown@sixflags.com"
+        },
+        {
+          "name": "Cynthia Morrison",
+          "email": "cynthia.morrison@sixflags.com"
+        },
+        {
+          "name": "Dyllon Gourley",
+          "email": "dGourley@sftp.com"
+        },
+        {
+          "name": "Rory Godley",
+          "email": "rGodley@sftp.com"
+        },
+        {
+          "name": "Katey Garza",
+          "email": "Katey.Garza@SixFlags.com"
+        },
+        {
+          "name": "Maria Polk",
+          "email": "mePolk@sftp.com"
+        },
+        {
+          "name": "Janette Ray",
+          "email": "jRay@sftp.com"
+        },
+        {
+          "name": "Raymond Nogueras",
+          "email": "rNogueras@sftp.com"
+        }
+      ],
+      "cc": ""
+    },
+    {
+      "id": "admissions",
+      "label": "Admissions",
+      "departments": [
+        "Admissions",
+        "ADM"
+      ],
+      "contacts": [
+        {
+          "name": "Natalia Arciniega (sftp.com entry)",
+          "email": "nArciniega@sftp.com"
+        },
+        {
+          "name": "Benjamin Cerone",
+          "email": "benjamin.cerone@sixflags.com"
+        },
+        {
+          "name": "James Marzouk",
+          "email": "james.marzouk@sixflags.com"
+        },
+        {
+          "name": "Mackenzie Sagastume",
+          "email": "mackenzie.sagastume@sixflags.com"
+        },
+        {
+          "name": "Natalia Arciniega (Six Flags entry)",
+          "email": "natalia.arciniegas@sixflags.com"
+        },
+        {
+          "name": "Grace Steubing",
+          "email": "Grace.Steubing@sixflags.com"
+        },
+        {
+          "name": "Antoinette Weatherly",
+          "email": "antoinette.weatherly@sixflags.com"
+        }
+      ],
+      "cc": ""
+    },
+    {
+      "id": "retail",
+      "label": "Retail / Rentals / Attractions",
+      "departments": [
+        "Merchandise",
+        "MDSE",
+        "Retail/Rentals/Attractions",
+        "Retail / Rentals / Attractions"
+      ],
+      "contacts": [
+        {
+          "name": "Amber Stahl",
+          "email": "Amber.Stahl@SixFlags.com"
+        },
+        {
+          "name": "Stephanie Griego",
+          "email": "sGriego@sftp.com"
+        },
+        {
+          "name": "Leticia Hernandez",
+          "email": "Leticia.Hernandez@SixFlags.com"
+        },
+        {
+          "name": "Pat Martinez",
+          "email": "Pat.Martinez@SixFlags.com"
+        }
+      ],
+      "cc": ""
+    }
+  ]
+}
