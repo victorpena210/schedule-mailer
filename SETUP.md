@@ -20,7 +20,7 @@ The existing Netlify project stays connected to `victorpena210/schedule-mailer`,
 | Variable | Value |
 | --- | --- |
 | `RESEND_API_KEY` | The private Resend sending key |
-| `MAIL_FROM` | `Wardrobe Scheduling <victor@wardrobe.team>` |
+| `MAIL_FROM` | `Wardrobe Scheduling <victor.pena@wardrobe.team>` |
 | `MAILER_ACCESS_CODE` | A random private sending code, 32–256 printable non-space ASCII characters |
 | `MAILER_ALLOWED_RECIPIENTS` | Exact approved recipient email addresses, separated by commas, semicolons, or newlines; include every To and CC address |
 
