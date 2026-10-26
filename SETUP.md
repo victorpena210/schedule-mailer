@@ -13,14 +13,14 @@ The existing Netlify project stays connected to `victorpena210/schedule-mailer`,
 ## Configure the sender
 
 1. Create or sign into your Resend account.
-2. Add `schedules.renatus.technology` under Domains. Add exactly the DNS records Resend supplies at the domain's DNS provider, leaving existing website and mailbox records intact. Enable sending and leave receiving disabled. Wait for verification.
+2. Add `wardrobe.team` under Domains. Add exactly the DNS records Resend supplies at the domain's DNS provider, leaving existing website and mailbox records intact. Enable sending and leave receiving disabled. Wait for verification.
 3. Create an API key with **Sending access**, restricted to this domain.
 4. In the Schedule Mailer Netlify project, open **Project configuration → Environment variables**. Set the following values for **Production**, including the **Functions** scope. Do not put credentials in GitHub, the public folder, frontend code, URLs, or chat.
 
 | Variable | Value |
 | --- | --- |
 | `RESEND_API_KEY` | The private Resend sending key |
-| `MAIL_FROM` | `Wardrobe Scheduling <no-reply@schedules.renatus.technology>` |
+| `MAIL_FROM` | `Wardrobe Scheduling <victor@wardrobe.team>` |
 | `MAILER_ACCESS_CODE` | A random private sending code, 32–256 printable non-space ASCII characters |
 | `MAILER_ALLOWED_RECIPIENTS` | Exact approved recipient email addresses, separated by commas, semicolons, or newlines; include every To and CC address |
 
