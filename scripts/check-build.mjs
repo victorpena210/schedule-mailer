@@ -10,7 +10,7 @@ async function walk(dir) {
   }
   return files;
 }
-const files=await walk('public');
+const files=[...await walk('public'),...await walk('server'),...await walk('netlify/functions')];
 for(const file of files) {
   if(/\.mjs$/.test(file)) {
     const checked=spawnSync(process.execPath,['--check',file],{encoding:'utf8'});
@@ -22,4 +22,4 @@ const html=await readFile('public/index.html','utf8');
 for(const match of html.matchAll(/(?:src|href)="([^"#]+)"/g)) {
   if(!/^(https?:|mailto:)/.test(match[1]))await access(path.join('public',match[1]));
 }
-console.log('Static app syntax and published assets checked. No server setup required.');
+console.log('App and function syntax checked. Private settings must be configured in Netlify to enable sending.');

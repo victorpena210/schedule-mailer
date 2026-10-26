@@ -1,4 +1,5 @@
 import {mountRouting} from './routing-ui.mjs';
+import {mountSending} from './sending.mjs';
 import {departmentBatches} from './routing.mjs';
 import {organize,decodeCsv,toCsv,emailHtml,emailText,dateLabel,recipients,esc} from './core.mjs';
 const $=id=>document.getElementById(id);
@@ -10,6 +11,14 @@ const routing=mountRouting(()=>{$('review-check').checked=false;autoSubject();re
 function emailSnapshot(){return JSON.stringify({group:chosenDepartment,rows:selectedRows(),to:currentBatch()?.to,cc:currentBatch()?.cc,bcc:$('bcc').checked,subject:$('subject').value,intro:$('intro').value,signature:$('signature').value});}
 function reviewed() {return result && !result.errors.length && selectedRows().length && $('review-check').checked && (!result.warnings.length || $('warning-check').checked);}
 function copyAllowed() {return Boolean(reviewed() && currentBatch()?.ready);}
+function sendingDraft() {
+  const batch=currentBatch();
+  if(!batch)return null;
+  return {groupId:batch.id,label:batch.label,departments:[...new Set(batch.rows.map(row=>row.department))],
+    rows:batch.rows.map(({department,date,name,location,end})=>({department,date,name,location,end})),
+    to:batch.to,cc:batch.cc,bcc:$('bcc').checked,subject:$('subject').value,intro:$('intro').value,signature:$('signature').value};
+}
+const sending=mountSending({getDraft:sendingDraft,canSend:()=>Boolean(copyAllowed()&&$('subject').value.trim()),notify:toast});
 function reset(message=true) {
   epoch++;lastCopied='';fallbackSnapshot='';result=null;selection=new Set();chosenDepartment='';excelSource=null;if(message)routing.reset();routing.setRows([],selection);
   for(const id of ['file','to','cc','subject','intro','signature','fallback-text'])$(id).value='';
@@ -30,7 +39,8 @@ function reset(message=true) {
   $('step1').className='active';$('step2').className='';$('step3').className='';
   if($('copy-fallback').open)$('copy-fallback').close();
   clearTimeout(toastTimer);$('toast').hidden=true;
-  if(message)toast('Schedule and recipient information cleared from this tab.');
+  sending.reset();
+  if(message)toast('Schedule, recipient information, and sending code cleared from this tab.');
 }
 function validationBox(kind,title,items) {
   return `<div class="validation-box ${kind}"><strong>${esc(title)}</strong>${items.length?`<ul>${items.slice(0,20).map(t=>`<li>${esc(t)}</li>`).join('')}</ul>${items.length>20?`<p>Plus ${items.length-20} more issues. Correct the source and try again.</p>`:''}`:''}</div>`;
@@ -106,6 +116,7 @@ function autoSubject() {
 }
 
 function render() {
+  sending.update();
   if(!result)return;
   const rows=selectedRows(),batch=currentBatch(),ready=copyAllowed();
   $('to').value=batch?.to.join('; ')||'';$('cc').value=batch?.cc.join('; ')||'';

@@ -1,26 +1,29 @@
 # Schedule Mailer
 
-Turn an original weekly CSV or XLSX schedule into a separate email-ready table for each department. Each message contains only that recipient group's employees, work locations, and final shift end times.
+Turn an original weekly CSV or XLSX schedule into a separate reviewed email for each department. Each email contains only the selected recipient group's employees, work locations, and final shift end times.
 
 ## Use the app
 
-1. Upload the original weekly schedule already filtered to 15-year-olds. For an Excel workbook, choose the worksheet to include.
-2. Load your private `schedule-mailer-recipients.json` settings file or add contacts under Department recipients.
-3. Choose dates and one department. Review any unassigned departments, incomplete addresses, and source warnings.
-4. Check the schedule review box, then choose **Copy formatted email**.
-5. Choose **Open email draft**, paste the copied table into the message, verify the sending account and recipients, and send from your email app. Repeat for each department.
+1. Load the original weekly schedule already filtered to 15-year-olds. Choose the worksheet for an Excel workbook.
+2. Load your private recipient settings file or enter the department contacts. Fix unassigned departments and incomplete addresses.
+3. Choose dates and one department. Review employees, locations, end times, recipients, and source warnings; check the review boxes.
+4. For direct sending, enter your private sending code, choose **Review & send this department**, review the summary, and confirm **Send email**. Direct sending uses To and CC; BCC remains available through email drafts.
+5. Alternatively, use **Copy formatted email**, **Open email draft**, then paste and send from your own email app.
+6. Repeat for the next department.
 
-The draft button uses the device's default email handler. If you use Outlook in a browser, you can instead open Outlook yourself and copy the displayed To, CC, subject, and formatted message into a new email.
+Direct sending requires the private Netlify settings in [SETUP.md](SETUP.md). Without them, sending stays disabled and the copy/draft workflow remains usable. No Microsoft or Gmail mailbox connection is required.
+
+The app reports provider acceptance, not guaranteed inbox delivery. Check Resend for delivery or bounce status. Retries of an unchanged review reuse a provider idempotency key for up to 23 hours; successful emails are blocked from resending in the current tab. If a send has an unknown result, retry without changing or refreshing the page, or check Resend before sending again. The app has no persistent send history across refreshes or devices.
 
 ## Data handling
 
-Schedules and recipient settings stay in the browser tab. The app has no Microsoft login, mailbox connection, automatic sending, or server data store. Nothing is uploaded or saved to browser storage. Refreshing or selecting **Clear everything** removes the in-tab data. Changing the schedule preserves the recipient settings until the tab is reset.
+The original file is read locally. Working schedules, contact settings, and the private sending code stay in memory until the tab is reset; they are not written to browser storage. Confirming a direct send transmits that department's message, selected schedule rows, and recipients to a Netlify function and then Resend. The function does not write message content, credentials, or recipients to application logs or a database. Resend and recipient mail systems may retain message content and delivery records under their settings.
 
-Downloaded files, copied messages, and sent emails remain wherever you place them. Keep the recipient settings file private and separate from the public website and GitHub repository. The app does not infer ages: use the source report already filtered to 15-year-olds.
+Approved recipient addresses and credentials are configured in Netlify, outside the public code. Keep downloaded recipient settings private and separate from the deployment and GitHub. Copies you intentionally download, copy, or email remain wherever you place them. The app does not infer ages.
 
 ## Development and deployment
 
-Requires Node.js 22 or newer. The spreadsheet library is bundled locally with its license; there are no npm runtime dependencies.
+Requires Node.js 22 or newer. No npm runtime dependencies; the spreadsheet library is bundled with its license.
 
 ```sh
 npm ci
@@ -28,4 +31,4 @@ npm test
 npm run build
 ```
 
-Netlify publishes `public/` from the GitHub `main` branch using `netlify.toml`. The functions directory is intentionally empty. Microsoft credentials and Netlify environment variables are not needed. See [SETUP.md](SETUP.md) for deployment and usage details.
+Netlify publishes `public/` from `main` and bundles the sending function from `netlify/functions/`. Only the function reads private environment variables. See [SETUP.md](SETUP.md) for setup and validation.
