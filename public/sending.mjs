@@ -14,7 +14,7 @@ export function mountSending({getDraft, canSend, notify, isBlocked = () => false
     $('sending-from').textContent = settings.enabled ? settings.from : 'Not connected yet';
     $('sending-help').textContent = !settings.enabled ? 'Direct sending is not connected yet. Copying emails and opening drafts still work.'
       : draft?.bcc ? 'Direct sending uses To and CC. Turn off BCC or use an email draft.'
-      : 'Review this department’s schedule and enter your private sending code. No mailbox sign-in is needed.';
+      : 'Your password is verified for this session. Review this department’s schedule before sending.';
     const attempt = draft && attempts.get(snapshot(draft));
     if(attempt?.id) $('sending-status').textContent = `Accepted by the email service. Reference: ${attempt.id}. Delivery can be checked in Resend.`;
     else if(!busy) $('sending-status').textContent = attempt?.error || '';

@@ -1,3 +1,4 @@
+import {mountSignIn} from './sign-in.mjs';
 import {mountRouting} from './routing-ui.mjs';
 import {mountSending} from './sending.mjs';
 import {mountTestSummary} from './test-summary-ui.mjs';
@@ -38,7 +39,13 @@ const sending=mountSending({getDraft:sendingDraft,canSend:()=>Boolean(copyAllowe
   isBlocked:()=>Boolean(testSummary?.busy),onBusyChange:()=>testSummary?.update(),onSettingsChange:()=>{if(result)render();}});
 testSummary=mountTestSummary({getPlan:testPlan,canSend:()=>Boolean(result&&!result.errors.length&&$('review-check').checked&&(!result.warnings.length||$('warning-check').checked)&&!$('bcc').checked),
   isBlocked:()=>sending.busy,onBusyChange:()=>sending.update(),notify:toast});
+const signIn=mountSignIn({onSignedIn(settings,code){
+  routing.load(settings);$('sending-code').value=code;
+  $('sending-code').dispatchEvent(new Event('input'));
+}});
 function reset(message=true) {
+  const retainedCode=message?'':$('sending-code').value;
+  if(message)signIn.lock();
   epoch++;lastCopied='';fallbackSnapshot='';result=null;selection=new Set();chosenDepartment='';excelSource=null;if(message)routing.reset();routing.setRows([],selection);
   for(const id of ['file','to','cc','subject','intro','signature','fallback-text'])$(id).value='';
   for(const id of ['review-check','warning-check','bcc'])$(id).checked=false;
@@ -62,6 +69,7 @@ function reset(message=true) {
   clearTimeout(toastTimer);$('toast').hidden=true;
   sending.reset();
   testSummary.reset();
+  $('sending-code').value=retainedCode;$('sending-code').dispatchEvent(new Event('input'));
   if(message)toast('Schedule, recipient information, and sending code cleared from this tab.');
 }
 function validationBox(kind,title,items) {
@@ -225,6 +233,6 @@ $('download').addEventListener('click',downloadCsv);$('copy-email').addEventList
 $('select-fallback').addEventListener('click',()=>{$('fallback-text').focus();$('fallback-text').select();});
 $('close-fallback').addEventListener('click',()=>{if(fallbackSnapshot===emailSnapshot())lastCopied=fallbackSnapshot;$('fallback-text').value='';$('copy-fallback').close();render();});
 $('copy-fallback').addEventListener('close',()=>$('fallback-text').value='');
-window.addEventListener('pagehide',()=>{routing.reset();reset(false);});
-window.addEventListener('pageshow',e=>{if(e.persisted){routing.reset();reset(false);}});
+window.addEventListener('pagehide',()=>{reset();$('toast').hidden=true;});
+window.addEventListener('pageshow',e=>{if(e.persisted){reset();$('toast').hidden=true;}});
 reset(false);

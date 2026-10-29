@@ -29,23 +29,6 @@ export function mountRouting(onChange,notify) {
     }
     drawSummary();onChange();
   }
-  let unlocking=false;
-  $('unlock-recipients').addEventListener('click',async()=>{
-    if(unlocking)return;
-    const code=$('recipient-code').value.trim();if(!code){notify('Enter your private sending code.',true);return;}
-    const request=revision;unlocking=true;$('unlock-recipients').disabled=true;
-    $('recipient-unlock-status').textContent='Unlocking department recipients…';
-    try{
-      const response=await fetch('/api/private-contacts',{method:'POST',cache:'no-store',signal:AbortSignal.timeout(15000),headers:{Authorization:'Bearer '+code}});
-      const data=await response.json();if(request!==revision)return;
-      if(!response.ok)throw Error(data.error||'Unable to unlock recipients.');
-      settings=parseSettings(data.settings);revision++;drawContacts();drawAssignments();changed();
-      $('sending-code').value=code;$('sending-code').dispatchEvent(new Event('input'));
-      $('recipient-unlock-status').textContent='Private department recipients loaded. Review them in each email preview.';
-      $('recipient-code').value='';
-    }catch(e){if(request===revision)$('recipient-unlock-status').textContent=e.name==='TimeoutError'?'Request timed out. Try again.':e.message;}
-    finally{unlocking=false;$('unlock-recipients').disabled=false;}
-  });
   $('recipient-file').addEventListener('change',async event=>{
     const file=event.target.files[0];event.target.value='';if(!file)return;
     if(file.size>1024*1024){notify('Recipient settings must be smaller than 1 MB.',true);return;}
@@ -78,8 +61,9 @@ export function mountRouting(onChange,notify) {
   drawContacts();drawSummary();
   return {
     get settings(){return settings;},
+    load(next){settings=parseSettings(next);revision++;drawContacts();drawAssignments();changed();},
     setRows(next,nextDates){rows=next;dates=nextDates;drawAssignments();drawSummary();},
     setDates(next){dates=next;drawSummary();},
-    reset(){revision++;$('recipient-code').value='';$('recipient-unlock-status').textContent='';settings=emptySettings();rows=[];dates=new Set();$('recipient-file-status').textContent='';$('recipient-file').value='';drawContacts();drawAssignments();drawSummary();}
+    reset(){revision++;settings=emptySettings();rows=[];dates=new Set();$('recipient-file-status').textContent='';$('recipient-file').value='';drawContacts();drawAssignments();drawSummary();}
   };
 }
