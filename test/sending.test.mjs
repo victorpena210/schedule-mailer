@@ -28,7 +28,7 @@ test('public status reveals no credentials or approved recipient list', async ()
 });
 test('missing or weak private settings and preview deploys fail closed', async () => {
   for(const overrides of [{RESEND_API_KEY:''},{MAIL_FROM:''},{MAILER_ALLOWED_RECIPIENTS:''},{MAILER_ALLOWED_RECIPIENTS:'bad-address'},
-    {MAILER_ACCESS_CODE:'1234'},{MAIL_FROM:'onboarding@resend.dev'},{CONTEXT:'deploy-preview'},{MAIL_FROM:'Name\r\nBcc: attacker@example.com'}]) {
+    {MAILER_ACCESS_CODE:'123456789012'},{MAIL_FROM:'onboarding@resend.dev'},{CONTEXT:'deploy-preview'},{MAIL_FROM:'Name\r\nBcc: attacker@example.com'}]) {
     const {handler, sent} = setup(overrides);
     assert.equal((await handler(request())).status,503);
     assert.deepEqual(await (await handler(new Request(origin+'/api/send-department'))).json(), {enabled:false,from:''});
@@ -101,4 +101,14 @@ test('upstream failures never report accepted or reveal provider response conten
   const {handler}=setup({},()=>{throw new Error('private failure');});
   const response=await handler(request()); assert.equal(response.status,504);
   assert.match((await response.json()).error,/unknown/);
+});
+
+test('13-character access codes authorize sending; incorrect codes never send', async () => {
+  const code='Test-code-13!';
+  assert.equal(code.length,13);
+  const {handler,sent}=setup({MAILER_ACCESS_CODE:code});
+  assert.equal((await handler(request(draft(),{authorization:'Bearer '+code.slice(1)}))).status,401);
+  assert.equal(sent.length,0);
+  assert.equal((await handler(request(draft(),{authorization:'Bearer '+code}))).status,200);
+  assert.equal(sent.length,1);
 });

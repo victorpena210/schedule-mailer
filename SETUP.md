@@ -21,7 +21,7 @@ The existing Netlify project stays connected to `victorpena210/schedule-mailer`,
 | --- | --- |
 | `RESEND_API_KEY` | The private Resend sending key |
 | `MAIL_FROM` | `Wardrobe Scheduling <victor.pena@wardrobe.team>` |
-| `MAILER_ACCESS_CODE` | A random private sending code, 32–256 printable non-space ASCII characters |
+| `MAILER_ACCESS_CODE` | A random private sending code, 13–256 printable non-space ASCII characters |
 | `MAILER_ALLOWED_RECIPIENTS` | Exact approved recipient email addresses, separated by commas, semicolons, or newlines; include every To and CC address |
 
 Create the sending code in a password manager, or generate one locally with `openssl rand -hex 24`. This is an app sending code, not your Resend API key or a mailbox password. Share it only with authorized operators, through an appropriate private channel. It is entered into the app for the current tab and cleared when the app resets.
@@ -55,4 +55,4 @@ The function requires the private code, a same-origin JSON request, an approved 
 The copy/draft workflow remains available without private settings. This app does not alter Microsoft account security or Authenticator settings.
 
 ## Private department recipients
-Set `MAILER_RECIPIENT_SETTINGS` in Netlify Functions environment variables to the complete recipient settings JSON. Mark it secret and restrict it to Production. Never commit that value. `MAILER_ACCESS_CODE` (32–256 printable characters) protects `/api/private-contacts`; it uses the same code as sending. Redeploy after setting these values. Users enter the code under Department recipients and select Unlock department recipients. Clear everything removes the loaded list and code. Local file import remains available. Recipient approval for actual sending still uses `MAILER_ALLOWED_RECIPIENTS`.
+Set `MAILER_RECIPIENT_SETTINGS` in Netlify Functions environment variables to the complete recipient settings JSON. Mark it secret and restrict it to Production. Never commit that value. `MAILER_ACCESS_CODE` (13–256 printable characters) protects `/api/private-contacts`; it uses the same code as sending. Redeploy after setting these values. Users enter the code under Department recipients and select Unlock department recipients. Clear everything removes the loaded list and code. Local file import remains available. Recipient approval for actual sending still uses `MAILER_ALLOWED_RECIPIENTS`.

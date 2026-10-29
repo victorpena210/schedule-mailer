@@ -30,14 +30,14 @@ function configuration(env) {
     const address = from.match(/^[^<>]+<([^<>]+)>$/)?.[1] || from;
     if(addresses([address]).length !== 1 || address.endsWith('@resend.dev')) return null;
     const allowed = recipients(env.MAILER_ALLOWED_RECIPIENTS || '');
-    if(!allowed.addresses.length || allowed.invalid.length || !/^re_\S+$/.test(env.RESEND_API_KEY || '') || !/^[\x21-\x7e]{32,256}$/.test(env.MAILER_ACCESS_CODE || '')) return null;
+    if(!allowed.addresses.length || allowed.invalid.length || !/^re_\S+$/.test(env.RESEND_API_KEY || '') || !/^[\x21-\x7e]{13,256}$/.test(env.MAILER_ACCESS_CODE || '')) return null;
     // Production secrets must not make preview branches able to send email.
     if(env.CONTEXT && env.CONTEXT !== 'production' && env.CONTEXT !== 'dev') return null;
     return {from, allowed:new Set(allowed.addresses), apiKey:env.RESEND_API_KEY, accessCode:env.MAILER_ACCESS_CODE};
   } catch {return null;}
 }
 function authorized(header, expected) {
-  const token = header?.match(/^Bearer ([\x21-\x7e]{32,256})$/)?.[1] || '';
+  const token = header?.match(/^Bearer ([\x21-\x7e]{13,256})$/)?.[1] || '';
   const hash = value => createHash('sha256').update(value).digest();
   return timingSafeEqual(hash(token), hash(expected));
 }
