@@ -1,45 +1,38 @@
 import {esc} from './core.mjs';
 
-export function mountSending({getDraft, canSend, notify, isBlocked = () => false, onBusyChange = () => {}, onSettingsChange = () => {}}) {
+export function mountSending({getDraft, canSend, notify, isBlocked = () => false, onBusyChange = () => {}, onSettingsChange = () => {}, getWarnings = () => []}) {
   const $ = id => document.getElementById(id);
   let settings = {enabled:false, from:''}, busy = false, pending = null, revision = 0;
   const attempts = new Map();
   const snapshot = draft => JSON.stringify(draft);
+  function allowed() {return Boolean(settings.enabled&&canSend()&&!getDraft()?.bcc&&!busy&&!isBlocked()&&$('sending-code').value.trim()&&!attempts.get(snapshot(getDraft()))?.id);}
+  function status(draft) {return {...(draft&&attempts.get(snapshot(draft))||{})};}
   function update() {
-    const draft = getDraft(), allowed = settings.enabled && canSend() && !draft?.bcc && !isBlocked();
-    $('send-department').disabled = !allowed || busy || !$('sending-code').value.trim();
-    $('send-department').textContent = busy ? 'Sending…' : 'Review & send this department';
-    $('sending-code').disabled = busy || isBlocked() || !settings.enabled;
-    for(const id of ['clear','file','replace','worksheet']) $(id).disabled = busy || isBlocked();
-    $('sending-from').textContent = settings.enabled ? settings.from : 'Not connected yet';
-    $('sending-help').textContent = !settings.enabled ? 'Direct sending is not connected yet. Copying emails and opening drafts still work.'
-      : draft?.bcc ? 'Direct sending uses To and CC. Turn off BCC or use an email draft.'
-      : 'Your password is verified for this session. Review this department’s schedule before sending.';
-    const attempt = draft && attempts.get(snapshot(draft));
-    if(attempt?.id) $('sending-status').textContent = `Accepted by the email service. Reference: ${attempt.id}. Delivery can be checked in Resend.`;
-    else if(!busy) $('sending-status').textContent = attempt?.error || '';
-    if(pending && (snapshot(draft) !== pending.snapshot || !canSend())) {
-      pending = null; if($('send-review').open && !busy) $('send-review').close();
+    for(const id of ['clear','file','replace','worksheet']) $(id).disabled=busy||isBlocked();
+    if(pending && (snapshot(getDraft())!==pending.snapshot || !canSend() || isBlocked())) {
+      pending=null;if($('send-review').open&&!busy)$('send-review').close();
     }
   }
   function reset() {
     revision++; pending = null; attempts.clear(); $('sending-code').value = '';
-    $('sending-status').textContent = ''; $('send-summary').replaceChildren();
+    $('send-summary').replaceChildren();
     if($('send-review').open) $('send-review').close();
     update();
   }
   function review() {
-    if($('send-department').disabled) return;
+    if(!allowed()) return;
     const draft = getDraft(), key = snapshot(draft);
     const prior = attempts.get(key);
     if(prior?.id) {notify('This exact email has already been accepted. Check Resend before sending another copy.'); return;}
     pending = {draft:structuredClone(draft), snapshot:key};
     $('send-summary').innerHTML = `<dl><dt>From</dt><dd>${esc(settings.from)}</dd><dt>Department</dt><dd>${esc(draft.label)}</dd><dt>To</dt><dd>${draft.to.map(esc).join(', ')}</dd>${draft.cc.length ? `<dt>CC</dt><dd>${draft.cc.map(esc).join(', ')}</dd>` : ''}<dt>Subject</dt><dd>${esc(draft.subject)}</dd><dt>Included</dt><dd>${draft.rows.length} shifts across ${new Set(draft.rows.map(r => r.date)).size} dates</dd></dl>`;
+    const warnings=getWarnings();
+    if(warnings.length)$('send-summary').innerHTML+=`<div class="validation-box warn"><strong>Check these source warnings</strong><ul>${warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul></div>`;
     $('confirm-send').disabled = false; $('cancel-send').disabled = false;
     $('send-review').showModal();
   }
   async function send() {
-    if(busy || isBlocked() || !pending || !canSend() || snapshot(getDraft()) !== pending.snapshot) return;
+    if(!allowed() || !pending || snapshot(getDraft()) !== pending.snapshot) return;
     const selected = pending, requestRevision = revision;
     let attempt = attempts.get(selected.snapshot);
     if(attempt?.id) return;
@@ -63,7 +56,6 @@ export function mountSending({getDraft, canSend, notify, isBlocked = () => false
     }
   }
   $('sending-code').addEventListener('input', update);
-  $('send-department').addEventListener('click', review);
   $('confirm-send').addEventListener('click', send);
   $('cancel-send').addEventListener('click', () => {$('send-review').close(); pending = null;});
   $('send-review').addEventListener('cancel', event => {if(busy) event.preventDefault(); else pending = null;});
@@ -71,5 +63,5 @@ export function mountSending({getDraft, canSend, notify, isBlocked = () => false
   fetch('/api/send-department', {cache:'no-store', signal:AbortSignal.timeout(10_000)})
     .then(r => r.ok ? r.json() : null).then(data => {if(data?.enabled && typeof data.from === 'string') settings = data; update(); onSettingsChange();})
     .catch(() => update());
-  return {update, reset, get busy() {return busy;}, get connection() {return {enabled:settings.enabled, from:settings.from};}};
+  return {update, reset, review, allowed, status, get busy() {return busy;}, get connection() {return {enabled:settings.enabled, from:settings.from};}};
 }

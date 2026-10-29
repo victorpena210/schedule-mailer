@@ -1,4 +1,5 @@
-export function mountTestSummary({getPlan, canSend, isBlocked = () => false, onBusyChange = () => {}, notify}) {
+import {esc} from './core.mjs';
+export function mountTestSummary({getPlan, canSend, isBlocked = () => false, onBusyChange = () => {}, getWarnings = () => [], notify}) {
   const $ = id => document.getElementById(id);
   let enabled = false, busy = false, pending = null, revision = 0;
   const attempts = new Map(), snapshot = plan => JSON.stringify(plan);
@@ -35,7 +36,8 @@ export function mountTestSummary({getPlan, canSend, isBlocked = () => false, onB
       if(currentRevision !== revision || key !== snapshot(getPlan()) || !canSend()) return;
       pending = {plan, snapshot:key};
       $('test-summary-subject').textContent = data.subject;
-      $('test-summary-content').innerHTML = data.html;
+      const warnings=getWarnings();
+      $('test-summary-content').innerHTML = (warnings.length?`<div class="validation-box warn"><strong>Source warnings to check before sending</strong><ul>${warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul></div>`:'')+data.html;
       $('confirm-test-summary').disabled = false; $('cancel-test-summary').disabled = false;
       $('test-summary-review').showModal();
       $('test-summary-review').scrollTop = 0;
