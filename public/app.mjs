@@ -10,7 +10,7 @@ let result=null,selection=new Set(),chosenDepartment='',previewMode='schedule',e
 function toast(text,error=false) {clearTimeout(toastTimer);$('toast').textContent=text;$('toast').classList.toggle('error',error);$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,6500);}
 function currentBatch() {return departmentBatches(result?.rows||[],routing.settings,selection).batches.find(b=>b.id===chosenDepartment);}
 function selectedRows() {return currentBatch()?.rows||[];}
-const routing=mountRouting(()=>{$('review-check').checked=false;autoSubject();render();},toast);
+const routing=mountRouting(()=>{$('review-check').checked=false;render();},toast);
 function emailSnapshot(){return JSON.stringify({group:chosenDepartment,rows:selectedRows(),to:currentBatch()?.to,cc:currentBatch()?.cc,bcc:$('bcc').checked,subject:$('subject').value,intro:$('intro').value,signature:$('signature').value});}
 function reviewed() {return result && !result.errors.length && selectedRows().length && $('review-check').checked && (!result.warnings.length || $('warning-check').checked);}
 function copyAllowed() {return Boolean(reviewed() && currentBatch()?.ready);}
@@ -158,7 +158,7 @@ function render() {
   const visibleRows=showSchedule?scheduleRows:rows;
   const plan=departmentBatches(result.rows,routing.settings,selection);
   $('schedule-preview').innerHTML=schedulePreview(plan,plan.batches.filter(b=>b.rows.length).map(draftForBatch),{
-    ...sending.connection,hasErrors:Boolean(result.errors.length),needsReview:!$('review-check').checked||(result.warnings.length&&!$('warning-check').checked)
+    ...sending.connection,busy:sending.busy||testSummary.busy,copiedGroup:lastCopied===emailSnapshot()?chosenDepartment:'',hasErrors:Boolean(result.errors.length),needsReview:!$('review-check').checked||(result.warnings.length&&!$('warning-check').checked)
   });
   $('schedule-preview').hidden=!showSchedule;$('email-preview').hidden=showSchedule;
   $('show-schedule').setAttribute('aria-pressed',String(showSchedule));$('show-email').setAttribute('aria-pressed',String(!showSchedule));
@@ -228,10 +228,34 @@ $('department').addEventListener('change',()=>{chosenDepartment=$('department').
 $('show-schedule').addEventListener('click',()=>{previewMode='schedule';render();});
 $('show-email').addEventListener('click',()=>{previewMode='email';render();});
 $('view-schedule').addEventListener('click',()=>{previewMode='schedule';render();});
+function editDraftRecipient(groupId,field,action,value) {
+  routing.editRecipient(groupId,field,action,value);
+  const input=$('schedule-preview').querySelector(`[data-email-group="${groupId}"] [data-recipient-add="${field}"] input`);
+  input?.focus({preventScroll:true});
+}
+$('schedule-preview').addEventListener('submit',event=>{
+  const form=event.target.closest('[data-recipient-add]');if(!form)return;
+  event.preventDefault();if(sending.busy||testSummary.busy)return;
+  const groupId=form.closest('[data-email-group]').dataset.emailGroup;
+  try{editDraftRecipient(groupId,form.dataset.recipientAdd,'add',form.querySelector('input').value);}
+  catch(error){form.querySelector('[data-recipient-error]').textContent=error.message;}
+});
 $('schedule-preview').addEventListener('click',event=>{
-  const button=event.target.closest('[data-preview-department]');if(!button||sending.busy||testSummary.busy)return;
-  $('department').value=button.dataset.previewDepartment;$('department').dispatchEvent(new Event('change'));
-  $('compose').scrollIntoView({block:'start'});
+  const remove=event.target.closest('[data-recipient-remove]');
+  const action=event.target.closest('[data-draft-action]');
+  if((!remove&&!action)||sending.busy||testSummary.busy)return;
+  const groupId=(remove||action).closest('[data-email-group]').dataset.emailGroup;
+  if(remove){
+    try{editDraftRecipient(groupId,remove.dataset.recipientRemove,'remove',remove.dataset.recipientIndex);}
+    catch(error){toast(error.message,true);}
+    return;
+  }
+  if(action.disabled)return;
+  if(chosenDepartment!==groupId){chosenDepartment=groupId;$('department').value=groupId;autoSubject();}
+  previewMode='schedule';render();
+  if(action.dataset.draftAction==='send')$('send-department').click();
+  if(action.dataset.draftAction==='copy')copyEmail();
+  if(action.dataset.draftAction==='open')openEmail();
 });
 for(const id of ['review-check','warning-check','bcc'])$(id).addEventListener('change',render);
 for(const id of ['subject','intro','signature'])$(id).addEventListener('input',render);

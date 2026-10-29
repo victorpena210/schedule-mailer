@@ -1,5 +1,5 @@
 import {esc} from './core.mjs';
-import {GROUPS,emptySettings,parseSettings,assignDepartment,groupForDepartment,addressStatus,departmentBatches} from './routing.mjs';
+import {GROUPS,editGroupRecipient,emptySettings,parseSettings,assignDepartment,groupForDepartment,addressStatus,departmentBatches} from './routing.mjs';
 
 export function mountRouting(onChange,notify) {
   const $=id=>document.getElementById(id);
@@ -61,6 +61,7 @@ export function mountRouting(onChange,notify) {
   drawContacts();drawSummary();
   return {
     get settings(){return settings;},
+    editRecipient(groupId,field,action,value){editGroupRecipient(settings,groupId,field,action,value);revision++;changed(true);},
     load(next){settings=parseSettings(next);revision++;drawContacts();drawAssignments();changed();},
     setRows(next,nextDates){rows=next;dates=nextDates;drawAssignments();drawSummary();},
     setDates(next){dates=next;drawSummary();},

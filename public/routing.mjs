@@ -62,6 +62,30 @@ export function addressStatus(group) {
 export function departmentBatches(rows,settings,dates) {
   const filtered=dates?rows.filter(row=>dates.has(row.date)):rows;
   const held=filtered.filter(row=>!groupForDepartment(row.department,settings));
-  const batches=settings.groups.map(group=>({...group,rows:filtered.filter(row=>groupForDepartment(row.department,settings)===group.id),...addressStatus(group)}));
+  const batches=settings.groups.map(group=>({...group,ccRaw:group.cc,rows:filtered.filter(row=>groupForDepartment(row.department,settings)===group.id),...addressStatus(group)}));
   return {batches,held};
+}
+
+// Edit only the named department; outgoing drafts use these same settings.
+export function editGroupRecipient(settings,groupId,field,action,value) {
+  const group=settings.groups.find(g=>g.id===groupId);
+  if(!group || !['to','cc'].includes(field))throw Error('Choose a department and recipient field.');
+  const cc=group.cc.split(/[;,\n\r]+/).map(a=>a.trim()).filter(Boolean);
+  if(action==='remove') {
+    const list=field==='to'?group.contacts:cc;
+    const index=Number(value);
+    if(!Number.isInteger(index)||index<0||index>=list.length)throw Error('This recipient is no longer in the list.');
+    list.splice(index,1);
+    if(field==='cc')group.cc=cc.join('; ');
+    return;
+  }
+  if(action!=='add')throw Error('Unknown recipient action.');
+  const entered=String(value).trim(), parsed=recipients(entered);
+  if(entered.length>320||/[;,\n\r]/.test(entered)||parsed.invalid.length||parsed.addresses.length!==1)throw Error('Enter one complete email address.');
+  const address=parsed.addresses[0];
+  const existing=recipients([...group.contacts.map(c=>c.email),...cc].join(';')).addresses;
+  if(existing.includes(address))throw Error('That address is already included in this email.');
+  if(group.contacts.length+cc.length>=50)throw Error('Use at most 50 recipients per email.');
+  if(field==='to')group.contacts.push({name:'',email:address});
+  else group.cc=[...cc,address].join('; ');
 }
