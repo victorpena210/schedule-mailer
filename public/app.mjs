@@ -4,23 +4,20 @@ import {mountSending} from './sending.mjs';
 import {mountTestSummary} from './test-summary-ui.mjs';
 import {departmentBatches} from './routing.mjs';
 import {schedulePreview} from './schedule-preview.mjs';
+import {dailyBatches,dailyDraft,editDailyRecipient} from './daily-drafts.mjs';
 import {organize,decodeCsv,emailHtml,emailText,deliverySignature,dateLabel,esc} from './core.mjs';
 const $=id=>document.getElementById(id);
 let result=null,selection=new Set(),activeGroup='',epoch=0,toastTimer,excelSource=null,fallbackDraft=null;
 const copied=new Map();
-const intro='The following is a list of 15-year-olds scheduled in your department for the dates below.';
-const signature='Victor Peña\nHR / Wardrobe\nvictor.pena@sixflags.com';
+const dailyRecipients=new Map();
 const snapshot=draft=>JSON.stringify(draft);
 function toast(text,error=false){clearTimeout(toastTimer);$('toast').textContent=text;$('toast').classList.toggle('error',error);$('toast').hidden=false;toastTimer=setTimeout(()=>$('toast').hidden=true,6500);}
-function plan(){return departmentBatches(result?.rows||[],routing.settings,selection);}
+function plan(){return dailyBatches(departmentBatches(result?.rows||[],routing.settings,selection),dailyRecipients);}
 function draftForBatch(batch){
-  const dates=[...new Set(batch.rows.map(r=>r.date))].sort();
-  return {groupId:batch.id,label:batch.label,departments:[...new Set(batch.rows.map(r=>r.department))],
-    rows:batch.rows.map(({department,date,name,location,end})=>({department,date,name,location,end})),to:batch.to,cc:batch.cc,bcc:false,
-    subject:`15-year-old schedules · ${batch.label}${dates.length?' · '+dateLabel(dates[0],true)+(dates.length>1?' – '+dateLabel(dates.at(-1),true):''):''}`,intro,signature};
+  return dailyDraft(batch,$('evening-time').value);
 }
 function currentBatch(){return plan().batches.find(b=>b.id===activeGroup);}
-function currentDraft(){const batch=currentBatch();return batch?draftForBatch(batch):null;}
+function currentDraft(){const batch=currentBatch();if(!batch)return null;const draft=draftForBatch(batch);return sending.status(draft).draft||draft;}
 function ready(batch){return Boolean(result&&!result.errors.length&&batch?.rows.length&&batch.ready);}
 const routing=mountRouting(()=>render(),toast);
 function testPlan(){const {batches,held}=plan(),included=batches.filter(b=>b.rows.length);return held.length||!included.length||included.some(b=>!b.ready)?null:{drafts:included.map(draftForBatch)};}
@@ -33,7 +30,7 @@ const signIn=mountSignIn({onSignedIn(settings,code){routing.load(settings);$('se
 function reset(signOut=true){
   const code=signOut?'':$('sending-code').value;
   if(signOut)signIn.lock();
-  epoch++;result=null;selection=new Set();activeGroup='';excelSource=null;copied.clear();fallbackDraft=null;
+  epoch++;result=null;selection=new Set();activeGroup='';excelSource=null;copied.clear();dailyRecipients.clear();fallbackDraft=null;
   if(signOut)routing.reset();routing.setRows([],selection);
   $('file').value='';$('fallback-text').value='';
   $('workspace').classList.add('waiting');$('file-panel').hidden=true;$('file-info').hidden=true;
@@ -48,7 +45,7 @@ function reset(signOut=true){
   $('preview-tag').textContent='WAITING FOR FILE';$('preview-tag').className='tag';
   $('step1').className='active';$('step2').className='';$('step3').className='';
   if($('copy-fallback').open)$('copy-fallback').close();
-  sending.reset();testSummary.reset();$('sending-code').value=code;$('sending-code').dispatchEvent(new Event('input'));
+  sending.reset({clearHistory:signOut});testSummary.reset();$('sending-code').value=code;$('sending-code').dispatchEvent(new Event('input'));
   clearTimeout(toastTimer);$('toast').hidden=true;
 }
 function validationBox(kind,title,items) {
@@ -107,7 +104,7 @@ function showResult(){
   $('workspace').classList.remove('waiting');$('file').value='';$('import-status').textContent='';
   $('validation').hidden=false;
   $('validation').innerHTML=(result.errors.length?validationBox('bad','Fix the source report',result.errors):'')+(result.warnings.length?validationBox('warn','Source warnings',result.warnings):'');
-  $('review-intro').textContent='Choose the dates to include in each department’s email.';
+  $('review-intro').textContent='Each selected date gets its own email for each department, sent the evening before.';
   selection=new Set(result.rows.map(r=>r.date));
   $('dates').innerHTML=[...selection].sort().map(d=>`<label class="date-chip"><input type="checkbox" value="${d}" checked><span>${esc(dateLabel(d,true))}</span></label>`).join('');
   $('date-fieldset').disabled=Boolean(result.errors.length);routing.setRows(result.rows,selection);
@@ -118,8 +115,8 @@ function render(){
   const batches=plan(),drafts=batches.batches.filter(b=>b.rows.length).map(draftForBatch);
   const rows=result.rows.filter(r=>selection.has(r.date));
   $('schedule-preview').innerHTML=schedulePreview(batches,drafts,{...sending.connection,hasErrors:Boolean(result.errors.length),needsReview:false,
-    busy:sending.busy||testSummary.busy,copiedGroups:drafts.filter(d=>copied.get(d.groupId)===snapshot(d)).map(d=>d.groupId),
-    deliveryStates:Object.fromEntries(drafts.map(d=>[d.groupId,sending.status(d)]))});
+    busy:sending.busy||testSummary.busy,copiedGroups:drafts.filter(d=>copied.get(d.draftId)===snapshot(d)).map(d=>d.draftId),
+    deliveryStates:Object.fromEntries(drafts.map(d=>[d.draftId,sending.status(d)]))});
   $('schedule-preview').hidden=false;
   $('selected-count').textContent=`${rows.length} shifts on selected dates.`;
   $('stat-employees').textContent=new Set(rows.map(r=>r.name)).size;$('stat-shifts').textContent=rows.length;
@@ -134,13 +131,13 @@ async function copyEmail(){
   try{
     if(!navigator.clipboard?.write||typeof ClipboardItem==='undefined')throw Error('Clipboard unavailable');
     await navigator.clipboard.write([new ClipboardItem({'text/html':new Blob([html],{type:'text/html'}),'text/plain':new Blob([plain],{type:'text/plain'})})]);
-    if(request===epoch){copied.set(draft.groupId,key);render();toast('Email copied. Open its draft and paste the message.');}
+    if(request===epoch){copied.set(draft.draftId,key);render();toast('Email copied. Open its draft and paste the message.');}
   }catch{
-    if(request!==epoch)return;fallbackDraft={groupId:draft.groupId,key};$('fallback-text').value=plain;$('copy-fallback').showModal();$('fallback-text').select();
+    if(request!==epoch)return;fallbackDraft={groupId:draft.draftId,key};$('fallback-text').value=plain;$('copy-fallback').showModal();$('fallback-text').select();
   }
 }
 function openEmail(){
-  const draft=currentDraft();if(!ready(currentBatch())||copied.get(draft.groupId)!==snapshot(draft))return;
+  const draft=currentDraft();if(!ready(currentBatch())||copied.get(draft.draftId)!==snapshot(draft))return;
   const uri=`mailto:?to=${encodeURIComponent(draft.to.join(','))}${draft.cc.length?'&cc='+encodeURIComponent(draft.cc.join(',')):''}&subject=${encodeURIComponent(draft.subject)}`;
   if(uri.length>1800){toast('Copy the addresses and message into your email app; this recipient list is too long for a draft link.',true);return;}
   window.location.href=uri;toast('Paste the copied message into your email draft, then review and send.');
@@ -154,19 +151,22 @@ for(const event of ['dragenter','dragover'])$('dropzone').addEventListener(event
 for(const event of ['dragleave','drop'])$('dropzone').addEventListener(event,e=>{e.preventDefault();$('dropzone').classList.remove('drag');});
 $('dropzone').addEventListener('drop',e=>{const files=e.dataTransfer.files;if(files.length!==1){toast('Choose one CSV or XLSX file at a time.',true);return;}importFile(files[0]);});
 $('dates').addEventListener('change',()=>{selection=new Set([...$('dates').querySelectorAll('input:checked')].map(i=>i.value));routing.setDates(selection);render();});
-function editDraftRecipient(groupId,field,action,value){
-  routing.editRecipient(groupId,field,action,value);
-  $('schedule-preview').querySelector(`[data-email-group="${groupId}"] [data-recipient-add="${field}"] input`)?.focus({preventScroll:true});
+$('evening-time').addEventListener('change',()=>render());
+function editDraftRecipient(draftId,field,action,value){
+  const batch=plan().batches.find(b=>b.id===draftId);
+  if(sending.status(draftForBatch(batch)).id)throw Error('This email is already confirmed. Cancel it in Resend before making a replacement.');
+  editDailyRecipient(dailyRecipients,batch,field,action,value);render();
+  $('schedule-preview').querySelector(`[data-email-draft="${draftId}"] [data-recipient-add="${field}"] input`)?.focus({preventScroll:true});
 }
 $('schedule-preview').addEventListener('submit',event=>{
   const form=event.target.closest('[data-recipient-add]');if(!form)return;event.preventDefault();if(sending.busy||testSummary.busy)return;
-  try{editDraftRecipient(form.closest('[data-email-group]').dataset.emailGroup,form.dataset.recipientAdd,'add',form.querySelector('input').value);}
+  try{editDraftRecipient(form.closest('[data-email-draft]').dataset.emailDraft,form.dataset.recipientAdd,'add',form.querySelector('input').value);}
   catch(error){form.querySelector('[data-recipient-error]').textContent=error.message;}
 });
 $('schedule-preview').addEventListener('click',event=>{
   const remove=event.target.closest('[data-recipient-remove]'),action=event.target.closest('[data-draft-action]');
   if((!remove&&!action)||sending.busy||testSummary.busy)return;
-  const groupId=(remove||action).closest('[data-email-group]').dataset.emailGroup;
+  const groupId=(remove||action).closest('[data-email-draft]').dataset.emailDraft;
   if(remove){try{editDraftRecipient(groupId,remove.dataset.recipientRemove,'remove',remove.dataset.recipientIndex);}catch(error){toast(error.message,true);}return;}
   if(action.disabled)return;activeGroup=groupId;
   if(action.dataset.draftAction==='send')sending.review();

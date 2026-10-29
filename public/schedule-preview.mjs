@@ -1,4 +1,5 @@
-import {emailHtml, deliverySignature, esc} from './core.mjs';
+import {emailHtml, deliverySignature, dateLabel, esc} from './core.mjs';
+import {deliveryDetails,sendTimeLabel} from './delivery-time.mjs';
 
 function recipientEditor(batch,field) {
   const items=field==='to'?batch.contacts.map(contact=>({email:contact.email,name:contact.name})):batch.ccText.split(/[;,\n\r]+/).map(email=>({email:email.trim(),name:''})).filter(c=>c.email);
@@ -15,37 +16,44 @@ function recipientEditor(batch,field) {
 
 // Drafts come from the same builder used for live sends and test summaries.
 // This local preview works before contacts or sending are configured.
-export function schedulePreview({batches, held}, drafts, {from = '', enabled = false, hasErrors = false, needsReview = true, busy = false, copiedGroup = '', copiedGroups = [], deliveryStates = {}} = {}) {
+export function schedulePreview({batches, held}, drafts, {from = '', enabled = false, hasErrors = false, needsReview = true, busy = false, copiedGroup = '', copiedGroups = [], deliveryStates = {}, now = Date.now()} = {}) {
   if (!drafts.length && !held.length) return '<div class="paper schedule-empty"><h3>No shifts on the selected dates</h3><p>Select a date in Review &amp; choose dates to preview its department emails.</p></div>';
   const accepted=Object.values(deliveryStates).filter(state=>state.id).length;
-  let html = `<p class="schedule-help"><strong>${drafts.length} separate department email${drafts.length === 1 ? '' : 's'} drafted.</strong> Review who receives each email and its complete message below. ${accepted?`${accepted} accepted for sending.`:'Nothing has been sent.'}</p>`;
+  let html = `<p class="schedule-help"><strong>${drafts.length} separate department email${drafts.length === 1 ? '' : 's'} drafted.</strong> One email per department, per day. Review each date, send time, and recipient list below. ${accepted?`${accepted} accepted for sending.`:'Nothing has been sent or scheduled.'}</p>`;
   if (hasErrors) html += '<div class="validation-box bad"><strong>Partial schedule — source needs fixing</strong><p>These drafts contain only rows that could be read. Correct the source issues before using or sharing this schedule.</p></div>';
-  for (const draft of drafts) {
-    const batch = batches.find(batch => batch.id === draft.groupId);
+  for (const current of drafts) {
+    const key=current.draftId||current.groupId;
+    const delivery=deliveryStates[key]||{};
+    const draft=delivery.draft||current;
+    const batch = batches.find(batch => batch.id === key);
+    const timing=deliveryDetails(draft,now);
     const blockers = [
       ...(hasErrors ? ['Correct the source report before sending.'] : []),
-      ...batch.issues,
+      ...(delivery.id?[]:batch.issues),
       ...(!draft.subject.trim() ? ['Add an email subject.'] : []),
       ...(draft.bcc ? ['BCC is selected. Use an email draft, or turn off BCC for direct sending.'] : []),
       ...(!enabled ? ['Direct sending is not connected yet.'] : []),
-      ...(needsReview ? ['Review this draft before sending.'] : [])
+      ...(needsReview ? ['Review this draft before sending.'] : []),
+      ...(!delivery.id&&timing.error?[timing.error]:[])
     ];
     const editableBatch={...batch,ccText:batch.ccRaw??batch.cc.join('; ')};
-    const canCopy=!hasErrors&&batch.ready&&!needsReview&&!busy;
-    const delivery=deliveryStates[draft.groupId]||{};
-    const canSend=canCopy&&!delivery.id&&enabled&&!draft.bcc&&Boolean(draft.subject.trim());
+    const canCopy=!hasErrors&&(delivery.id||batch.ready)&&!needsReview&&!busy;
+    const canSend=canCopy&&!delivery.id&&enabled&&!draft.bcc&&Boolean(draft.subject.trim())&&!timing.error;
     const headers = [
       ['From', enabled ? from : 'Not connected yet'],
       ['Report departments', draft.departments.join('; ')],
 
       ['Subject', draft.subject.trim() || 'Subject missing']
     ];
-    html += `<article class="paper schedule-group" data-email-group="${esc(draft.groupId)}">
-      <header class="schedule-group-heading"><div><h3>${esc(draft.label)}</h3><p>One separate email · ${draft.rows.length} shift${draft.rows.length === 1 ? '' : 's'} · ${new Set(draft.rows.map(row => row.name)).size} employees</p></div><button type="button" class="primary draft-send" data-draft-action="send" ${canSend?'':'disabled'}>${delivery.id?'Sent':'Send'}</button></header>
-      <dl class="delivery-headers">${headers.slice(0,2).map(([label,value]) => `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')}<dt>${draft.bcc?'BCC':'To'}</dt><dd>${recipientEditor(editableBatch,'to')}</dd><dt>CC</dt><dd>${recipientEditor(editableBatch,'cc')}</dd><dt>Subject</dt><dd>${esc(draft.subject.trim()||'Subject missing')}</dd></dl>
+    const button=delivery.id?(delivery.scheduledAt?'Scheduled':'Sent'):(timing.mode==='scheduled'?'Schedule':draft.scheduleDate?'Send now':'Send');
+    const sendLabel=delivery.id?(delivery.scheduledAt?sendTimeLabel(delivery.scheduledAt):'Submitted for immediate sending'):timing.label;
+    html += `<article class="paper schedule-group" data-email-group="${esc(draft.groupId)}" data-email-draft="${esc(key)}">
+      <header class="schedule-group-heading"><div><h3>${esc(draft.label)}${draft.scheduleDate?` · ${esc(dateLabel(draft.scheduleDate,true))}`:''}</h3><p>One separate email · ${draft.rows.length} shift${draft.rows.length === 1 ? '' : 's'} · ${new Set(draft.rows.map(row => row.name)).size} employees</p></div><button type="button" class="primary draft-send" data-draft-action="send" ${canSend?'':'disabled'}>${button}</button></header>
+      <dl class="delivery-headers">${headers.slice(0,2).map(([label,value]) => `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')}${draft.scheduleDate?`<dt>Schedule date</dt><dd>${esc(dateLabel(draft.scheduleDate))}</dd><dt>Send time</dt><dd>${esc(sendLabel)}</dd>`:''}<dt>${draft.bcc?'BCC':'To'}</dt><dd>${delivery.id?draft.to.map(esc).join('; '):recipientEditor(editableBatch,'to')}</dd><dt>CC</dt><dd>${delivery.id?(draft.cc.map(esc).join('; ')||'None'):recipientEditor(editableBatch,'cc')}</dd><dt>Subject</dt><dd>${esc(draft.subject.trim()||'Subject missing')}</dd></dl>
+      ${!delivery.id&&timing.notice?`<div class="validation-box warn">${esc(timing.notice)}</div>`:''}
       ${blockers.length ? `<div class="delivery-blockers"><strong>Before sending</strong><ul>${blockers.map(message => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
       <div class="email-body">${emailHtml(draft.rows, draft.intro.trim(), deliverySignature(draft.signature))}</div>
-      <div class="draft-actions">${delivery.id?`<p class="delivery-status" role="status">Accepted by the email service. Reference: ${esc(delivery.id)}.</p>`:delivery.error?`<p class="inline-status error" role="status">${esc(delivery.error)}</p>`:''}<button type="button" class="secondary" data-draft-action="copy" ${canCopy?'':'disabled'}>Copy email</button><button type="button" class="secondary" data-draft-action="open" ${canCopy&&(copiedGroup===draft.groupId||copiedGroups.includes(draft.groupId))?'':'disabled'}>Open email draft</button><p class="helper">Recipient changes apply to this session. Nothing is sent until you confirm.</p></div>
+      <div class="draft-actions">${delivery.id?`<p class="delivery-status" role="status">${delivery.scheduledAt?`Scheduled for ${esc(sendTimeLabel(delivery.scheduledAt))}. You can close this page.`:'Accepted by the email service.'} Reference: ${esc(delivery.id)}.</p>`:delivery.error?`<p class="inline-status error" role="status">${esc(delivery.error)}</p>`:''}<button type="button" class="secondary" data-draft-action="copy" ${canCopy?'':'disabled'}>Copy email</button><button type="button" class="secondary" data-draft-action="open" ${canCopy&&(copiedGroup===key||copiedGroups.includes(key))?'':'disabled'}>Open email draft</button><p class="helper">${delivery.id?'To replace a confirmed email, cancel it in Resend first.':'Recipient edits apply only to this daily email. Nothing is sent or scheduled until you confirm.'}</p></div>
     </article>`;
   }
   const skipped = batches.filter(batch => !batch.rows.length).map(batch => batch.label);

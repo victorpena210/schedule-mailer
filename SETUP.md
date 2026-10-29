@@ -36,16 +36,27 @@ The test-summary feature adds `/api/test-summary-preview` (10 requests per IP/do
 
 ## Validate before department use
 
-1. Use a sample CSV/XLSX with fictional employees and load the intended department recipient settings.
-2. Check that the app displays the intended From name and address.
-3. Choose dates, review the schedule, check the review boxes, enter the private sending code, and leave BCC off.
-4. Choose **Review test summary for Victor**. This shows all included department recipients and full emails and validates recipient address formatting. The preview sends no emails.
-5. Confirm **Send test summary to Victor**. Exactly one `[TEST ONLY]` email goes to **victor.pena@sixflags.com**, with no CC, BCC, or attachments. Check that inbox and Resend's delivery status. The app's accepted status alone does not prove inbox delivery.
-6. Add or remove To and CC recipients directly in a department email card. Review the addresses and schedule, click **Send**, and confirm. Recipient edits require no Netlify configuration change or redeployment. Testing never triggers this action or marks a department as sent.
+1. Use a sample CSV/XLSX with fictional employees, sign in, and confirm the sender address.
+2. Select two dates. Verify that each department has two separate cards when it has shifts on both days, each containing only that day's rows and a one-date subject.
+3. Check the evening time (default 20:00 Central). October 30, 2026 at that setting queues for October 29 at 8 PM CDT (`2026-10-30T01:00:00.000Z`). November 1 queues for October 31 at 8 PM CDT. November 2 queues for November 1 at 8 PM CST, after the daylight-saving change.
+4. Edit recipients in one daily card and verify that the other date's addresses stay unchanged.
+5. Choose **Schedule** and inspect the complete confirmation, including the day the schedule covers and its send time. Canceling this dialog makes no provider request. Confirmation queues only that one daily email.
+6. Verify the card reports **Scheduled** with its timestamp and reference. Check Resend for the queued email and eventual delivery or bounce status. Provider acceptance does not prove inbox delivery.
+7. Check the late-upload path: when the previous evening has passed, current/future schedule dates show **Send now** and require that explicit confirmation. Past schedule dates and send times more than 30 days away are rejected before contacting the provider.
 
-Direct sending currently supports To and CC. For BCC, use the existing copy-and-draft workflow. Each confirmation sends one department email; it does not send other departments automatically.
+The existing test-summary routes can preview multiple dates for the same department and send one summary only to Victor. They never queue or send the department drafts. Each department/date pair must be unique and each draft must contain one date. The summary supports up to 93 daily drafts within the existing 512 KiB request limit.
 
-If a request times out or has an unknown result, retry the unchanged email without refreshing. Its idempotency key is reused. Reviews expire after 23 hours, inside Resend's 24-hour deduplication window. Check Resend before refreshing, altering, or resending an uncertain request. No schedule or send history is stored by this app across browser sessions.
+## Scheduled delivery
+
+The server recomputes `scheduled_at` from the validated single schedule date and selected time in `America/Chicago`. It does not trust a browser-supplied timestamp. `POST https://api.resend.com/emails` holds the message for delivery, so no browser timer, cron job, or additional credential is needed. Production-only settings, the shared password, same-origin checks, recipient validation, limits, and confirmation remain required.
+
+Scheduled responses contain `status: scheduled`, the provider message ID, and the canonical `scheduledAt` timestamp. Immediate sends return `status: accepted`. If the target time passes between review and submission, the server rejects the stale delivery mode and requires a new review; it never silently changes a scheduled request into an immediate send.
+
+Queued messages are immutable snapshots of their confirmed recipients and content. Changing files, recipients, or the time in the app does not cancel or update those messages. Manage them in Resend, and cancel an existing queued message before making a replacement. The app retains confirmed cards across upload changes in the current tab, but has no persistent queue/history interface across refreshes or devices.
+
+Exact daily payload retries reuse a content-based provider reference across refreshes for Resend's 24-hour idempotency window. The API rejects attempts older than 23 hours. Changed content produces a separate reference; a replacement is not an automatic update. A refreshed/reuploaded message outside the provider window may also duplicate an earlier queued email. Review Resend before resubmitting an existing schedule or retrying an unknown result.
+
+See [Resend scheduling](https://resend.com/docs/dashboard/emails/schedule-email) for the 30-day scheduling limit and queue management.
 
 ## Security and data handling
 
