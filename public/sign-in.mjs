@@ -27,7 +27,7 @@ export function mountSignIn({onSignedIn}) {
       onSignedIn(settings,code);
       $('sign-in-password').value='';$('sign-in-status').textContent='';
       $('sign-in').hidden=true;$('app-shell').hidden=false;
-      $('file').focus();
+      $('dropzone').focus();
     } catch(error) {
       if(request===revision)$('sign-in-status').textContent=['TimeoutError','TypeError'].includes(error.name)?'Could not connect. Please try again.':error.message;
     } finally {

@@ -45,13 +45,14 @@ const signIn=mountSignIn({onSignedIn(settings,code){
 }});
 function reset(message=true) {
   const retainedCode=message?'':$('sending-code').value;
+  $('workspace').classList.add('waiting');
   if(message)signIn.lock();
   epoch++;lastCopied='';fallbackSnapshot='';result=null;selection=new Set();chosenDepartment='';excelSource=null;if(message)routing.reset();routing.setRows([],selection);
   for(const id of ['file','to','cc','subject','intro','signature','fallback-text'])$(id).value='';
   for(const id of ['review-check','warning-check','bcc'])$(id).checked=false;
   $('review-check').disabled=true;$('email-fields').disabled=true;$('date-fieldset').disabled=true;$('department').disabled=true;
   $('department').innerHTML='<option value="">Choose a department</option>';$('dates').innerHTML='<span class="empty-control">No schedule loaded</span>';
-  $('file-info').hidden=true;$('dropzone').hidden=false;$('dropzone').classList.remove('drag');
+  $('file-info').hidden=true;$('file-panel').hidden=true;$('step1').href='#schedule-overview';$('dropzone').classList.remove('drag');
   $('sheet-picker').hidden=true;$('worksheet').replaceChildren();$('file-type').textContent='FILE';
   $('validation').hidden=true;$('validation').replaceChildren();$('warning-check-wrap').hidden=true;
   $('stats').hidden=true;$('empty-preview').hidden=false;$('email-preview').hidden=true;$('email-body').replaceChildren();
@@ -76,15 +77,15 @@ function validationBox(kind,title,items) {
   return `<div class="validation-box ${kind}"><strong>${esc(title)}</strong>${items.length?`<ul>${items.slice(0,20).map(t=>`<li>${esc(t)}</li>`).join('')}</ul>${items.length>20?`<p>Plus ${items.length-20} more issues. Correct the source and try again.</p>`:''}`:''}</div>`;
 }
 async function importFile(file) {
-  if(sending.busy||testSummary.busy)return;
+  if(!file||sending.busy||testSummary.busy)return;
   reset(false);const request=epoch;
-  if(!file)return;
   if(!/\.(csv|xlsx)$/i.test(file.name)){toast('Choose a .csv or .xlsx file exported from the weekly schedule report.',true);return;}
   if(file.size>5*1024*1024){toast('This file is larger than 5 MB. Export a single schedule period.',true);return;}
+  $('file-panel').hidden=false;
   $('import-status').textContent='Reading and checking your schedule…';
   try {
     const buffer=await file.arrayBuffer();if(request!==epoch)return;
-    $('dropzone').hidden=true;$('file-info').hidden=false;$('filename').textContent=file.name;$('file-size').textContent=`${(file.size/1024).toFixed(1)} KB · read on this device`;
+    $('file-panel').hidden=false;$('step1').href='#file-panel';$('file-info').hidden=false;$('filename').textContent=file.name;$('file-size').textContent=`${(file.size/1024).toFixed(1)} KB · read on this device`;
     $('file-type').textContent=/\.xlsx$/i.test(file.name)?'XLSX':'CSV';
     if(/\.xlsx$/i.test(file.name)) {
       const excel=await import('./excel.mjs');if(request!==epoch)return;
@@ -102,7 +103,7 @@ async function importFile(file) {
     }
     result=organize(decodeCsv(buffer));
     showResult();
-  } catch(e) {if(request!==epoch)return;reset(false);$('import-status').textContent=e.message;$('import-status').classList.add('error');toast('The file could not be converted. Check the message below the upload area.',true);}
+  } catch(e) {if(request!==epoch)return;reset(false);$('file-panel').hidden=false;$('import-status').textContent=e.message;$('import-status').classList.add('error');toast('The file could not be converted. Check the message under Your schedule file.',true);}
 }
 function selectWorksheet() {
   if(!excelSource)return;
@@ -110,7 +111,7 @@ function selectWorksheet() {
   const source=excelSource, index=$('worksheet').value;
   const filename=$('filename').textContent, size=$('file-size').textContent;
   reset(false);excelSource=source;
-  $('dropzone').hidden=true;$('file-info').hidden=false;$('filename').textContent=filename;$('file-size').textContent=size;$('file-type').textContent='XLSX';
+  $('file-panel').hidden=false;$('step1').href='#file-panel';$('file-info').hidden=false;$('filename').textContent=filename;$('file-size').textContent=size;$('file-type').textContent='XLSX';
   $('sheet-picker').hidden=false;
   $('worksheet').innerHTML='<option value="">Choose a worksheet…</option>'+source.sheets.map((name,i)=>`<option value="${i}">${esc(name)}</option>`).join('');
   $('worksheet').value=index;
@@ -125,6 +126,7 @@ function selectWorksheet() {
   }
 }
 function showResult() {
+    $('workspace').classList.remove('waiting');
     $('file').value='';$('import-status').textContent='';
     $('validation').hidden=false;
     $('validation').innerHTML=(result.errors.length?validationBox('bad',`${result.errors.length} issue${result.errors.length===1?'':'s'} to resolve`,result.errors):validationBox('good','✓ Shift structure checked',[]))+(result.warnings.length?validationBox('warn','Source report needs a review',result.warnings):'');
@@ -213,6 +215,10 @@ function openEmail() {
 $('file').addEventListener('change',e=>importFile(e.target.files[0]));
 $('worksheet').addEventListener('change',selectWorksheet);
 $('replace').addEventListener('click',()=>$('file').click());
+$('dropzone').addEventListener('click',()=>{if(!sending.busy&&!testSummary.busy)$('file').click();});
+$('dropzone').addEventListener('keydown',event=>{
+  if(event.key==='Enter'||event.key===' '){event.preventDefault();$('dropzone').click();}
+});
 $('clear').addEventListener('click',()=>reset());
 for(const event of ['dragenter','dragover'])$('dropzone').addEventListener(event,e=>{e.preventDefault();$('dropzone').classList.add('drag');});
 for(const event of ['dragleave','drop'])$('dropzone').addEventListener(event,e=>{e.preventDefault();$('dropzone').classList.remove('drag');});
