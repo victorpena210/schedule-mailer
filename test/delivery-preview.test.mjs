@@ -17,7 +17,7 @@ test('each automatic preview matches the outgoing department body and shows only
   const settings=emptySettings();
   for(const group of settings.groups){group.contacts=[{name:'Example manager',email:group.id+'@example.com'}];group.cc=group.id+'.copy@example.com';}
   const plan=departmentBatches(rows,settings,dates),drafts=draftsFor(plan);
-  const env={RESEND_API_KEY:'re_test_only',MAIL_FROM:'Schedule <schedule@example.com>',MAILER_ACCESS_CODE:'test-only-access-code-32-characters-long',MAILER_ALLOWED_RECIPIENTS:drafts.flatMap(d=>[...d.to,...d.cc]).join(';'),CONTEXT:'production'};
+  const env={RESEND_API_KEY:'re_test_only',MAIL_FROM:'Schedule <schedule@example.com>',MAILER_ACCESS_CODE:'test-only-access-code-32-characters-long',CONTEXT:'production'};
   const html=schedulePreview(plan,drafts,{from:env.MAIL_FROM,enabled:true,needsReview:false});
   const delivered=[];
   const handler=createMailer({env,fetchImpl:async(url,init)=>{delivered.push(JSON.parse(init.body));return Response.json({id:'mock-id'});}});

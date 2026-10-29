@@ -29,11 +29,10 @@ function configuration(env) {
     const from = text(env.MAIL_FROM, 320);
     const address = from.match(/^[^<>]+<([^<>]+)>$/)?.[1] || from;
     if(addresses([address]).length !== 1 || address.endsWith('@resend.dev')) return null;
-    const allowed = recipients(env.MAILER_ALLOWED_RECIPIENTS || '');
-    if(!allowed.addresses.length || allowed.invalid.length || !/^re_\S+$/.test(env.RESEND_API_KEY || '') || !/^[\x21-\x7e]{13,256}$/.test(env.MAILER_ACCESS_CODE || '')) return null;
+    if(!/^re_\S+$/.test(env.RESEND_API_KEY || '') || !/^[\x21-\x7e]{13,256}$/.test(env.MAILER_ACCESS_CODE || '')) return null;
     // Production secrets must not make preview branches able to send email.
     if(env.CONTEXT && env.CONTEXT !== 'production' && env.CONTEXT !== 'dev') return null;
-    return {from, allowed:new Set(allowed.addresses), apiKey:env.RESEND_API_KEY, accessCode:env.MAILER_ACCESS_CODE};
+    return {from, apiKey:env.RESEND_API_KEY, accessCode:env.MAILER_ACCESS_CODE};
   } catch {return null;}
 }
 function authorized(header, expected) {
@@ -55,13 +54,12 @@ async function readBody(request) {
   try {return JSON.parse(Buffer.concat(chunks).toString('utf8'));}
   catch {throw new MailError(400, 'The email request could not be read.');}
 }
-function messageFor(body, settings, requireApproved = true) {
+function messageFor(body, settings) {
   if(!body || body.reviewed !== true || !GROUPS.some(g => g.id === body.groupId)) throw new MailError(400, 'Choose and review one department before sending.');
   if(body.bcc !== false) throw new MailError(400, 'Direct sending uses To and CC. Turn off BCC or use an email draft.');
   const to = addresses(body.to), cc = addresses(body.cc);
   const all = [...to, ...cc];
   if(!to.length || all.length > 50 || new Set(all).size !== all.length) throw new MailError(400, 'Use 1–50 different recipients, including CC.');
-  if(requireApproved && all.some(address => !settings.allowed.has(address))) throw new MailError(403, 'One or more recipients are not approved for direct sending. Ask the app owner to update the recipient allowlist.');
   if(!Array.isArray(body.departments) || !body.departments.length || body.departments.length > 100) throw new MailError(400, 'The department selection is invalid.');
   const departments = new Set(body.departments.map(v => text(v, 200)));
   if(!Array.isArray(body.rows) || !body.rows.length || body.rows.length > 2000) throw new MailError(400, 'Select between 1 and 2,000 shifts.');
@@ -84,25 +82,22 @@ function summaryFor(body, settings) {
   const planned = body.drafts.map(draft => {
     if(!draft || seen.has(draft.groupId)) throw new MailError(400, 'Each department must appear only once in the test summary.');
     seen.add(draft.groupId);
-    // The same validation and rendering as a live send. Unapproved addresses are
-    // reported in the summary as blocked; they are never delivery recipients.
-    const message = messageFor({...draft, reviewed:true}, settings, false);
+    // Preview the same validated recipients and rendered body as a live send.
+    const message = messageFor({...draft, reviewed:true}, settings);
     for(const department of draft.departments) {
       if(departments.has(department)) throw new MailError(400, 'A source department appears in more than one email. Review its mapping.');
       departments.add(department);
     }
-    return {draft, message, group:GROUPS.find(g => g.id === draft.groupId),
-      unapproved:[...message.to, ...(message.cc || [])].filter(address => !settings.allowed.has(address))};
+    return {draft, message, group:GROUPS.find(g => g.id === draft.groupId)};
   }).sort((a,b) => a.group.id.localeCompare(b.group.id));
   const rows = planned.flatMap(p => p.draft.rows);
   const dates = [...new Set(rows.map(r => r.date))].sort();
   const skipped = GROUPS.filter(g => !seen.has(g.id)).map(g => g.label);
-  const ready = planned.filter(p => !p.unapproved.length).length;
   const subject = `[TEST ONLY] Schedule Mailer — ${planned.length} department email${planned.length === 1 ? '' : 's'} / ${rows.length} shift${rows.length === 1 ? '' : 's'}`;
   const intro = `This test sends one summary only to ${TEST_RECIPIENT}, with no CC, BCC, or attachments. No department emails are sent or scheduled by this test.`;
-  const overview = `The plan contains ${planned.length} separate department emails covering ${rows.length} shifts. ${ready} department email(s) pass the current recipient approval check. Each live email contains only that department's schedule. Live sending requires a separate confirmation for each department.`;
-  const sections = planned.map(({draft, message, group, unapproved}) => {
-    const action = unapproved.length ? `Live send blocked. These addresses are not approved in the server settings: ${unapproved.join('; ')}.` : 'Live send would submit one email to the To and CC addresses below.';
+  const overview = `The plan contains ${planned.length} separate department emails covering ${rows.length} shifts. Each live email goes to the reviewed To and CC addresses and contains only that department's schedule. Live sending requires a separate confirmation for each department.`;
+  const sections = planned.map(({draft, message, group}) => {
+    const action = 'Live send would submit one email to the To and CC addresses below.';
     const headers = [['From',message.from],['To',message.to.join('; ')],['CC',(message.cc || []).join('; ') || 'None'],['BCC','None'],['Attachments','None'],['Subject',message.subject]];
     return {
       html:`<section style="border:1px solid #ccd7e1;padding:16px;margin:24px 0"><h2 style="font-size:18px">${esc(group.label)} — ${draft.rows.length} shift(s)</h2><p><strong>Action:</strong> ${esc(action)}</p><p>${headers.map(([key,value]) => `<strong>${key}:</strong> ${esc(value)}`).join('<br>')}</p><p><strong>Exact email body:</strong></p>${message.html}</section>`,

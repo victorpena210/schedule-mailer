@@ -19,7 +19,7 @@ Load the schedule and recipient settings, choose dates, review the schedule and 
 
 This sends exactly one message to **victor.pena@sixflags.com**, using the configured Resend sender (for this project, `victor.pena@wardrobe.team`). The test has no CC, BCC, or attachments. It contains every mapped department with shifts on the selected dates, the intended From/To/CC and subject, and the exact live email bodies including the automated footer. The current department uses its edited subject; other departments use the same default subjects that selecting them would generate. All use the current message and signature. Empty departments are listed as skipped. Missing mappings or incomplete contact lists must be fixed before preparing the test.
 
-The preview checks the server's live recipient allowlist. Unapproved department addresses are listed as **blocked for live sending**, so you can inspect the plan before authorizing department delivery. The fixed Victor test destination is permitted only by the test-summary endpoint and does not add any address to the live-send allowlist. All existing private environment settings are still required.
+Signed-in operators can add any valid To or CC address to a department email. There is no recipient allowlist or separate approval step. The preview validates recipient formatting and displays the exact routing and message; each department send still requires confirmation. Test summaries always go only to Victor's fixed work address.
 
 Preparing the summary does not send email. Confirming it sends only the summary, never department emails, and does not mark or schedule any live email. Summary retries use their own idempotency references, separate from live sends. A repeated accepted summary is blocked in the current tab; refreshing still clears the app's in-memory history. Check your work inbox and Resend for delivery status.
 
@@ -31,7 +31,7 @@ The original file is read locally. Working schedules, contact settings, and the 
 
 Reviewing a test summary transmits all included drafts to a private Netlify function for validation and rendering. Confirming it sends their combined contents through Resend only to Victor's work address. These routes use the same private code, origin checks, size limits, and production-only configuration as live delivery.
 
-Approved recipient addresses and credentials are configured in Netlify, outside the public code. Keep downloaded recipient settings private and separate from the deployment and GitHub. Copies you intentionally download, copy, or email remain wherever you place them. The app does not infer ages.
+Default department recipients and credentials are configured privately in Netlify, outside the public code. Operators can edit recipients in each department email after signing in. Keep downloaded recipient settings private and separate from the deployment and GitHub. Copies you intentionally download, copy, or email remain wherever you place them. The app does not infer ages.
 
 ## Development and deployment
 

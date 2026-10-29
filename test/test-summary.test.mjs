@@ -4,7 +4,7 @@ import {createMailer, TEST_RECIPIENT} from '../server/mailer.mjs';
 
 const origin='https://schedule.example.com';
 const env={RESEND_API_KEY:'re_test_only',MAIL_FROM:'Wardrobe Scheduling <victor.pena@wardrobe.team>',
-  MAILER_ACCESS_CODE:'test-only-access-code-32-characters-long',MAILER_ALLOWED_RECIPIENTS:'retail@example.com;food@example.com;copy@example.com',CONTEXT:'production'};
+  MAILER_ACCESS_CODE:'test-only-access-code-32-characters-long',CONTEXT:'production'};
 function plan() {
   return {drafts:[
     {groupId:'retail',departments:['Merchandise'],to:['retail@example.com'],cc:[],bcc:false,subject:'Retail schedule',intro:'Your shifts',signature:'Wardrobe',rows:[{department:'Merchandise',date:'2026-10-31',name:'Retail Example',location:'Gift Shop',end:'4:00 PM'}]},
@@ -48,15 +48,26 @@ test('preview renders the same complete summary without contacting the email pro
   assert.equal(data.html,summary.sent[0].message.html);assert.equal(data.subject,summary.sent[0].message.subject);
   assert.deepEqual(data.to,[TEST_RECIPIENT]);
 });
-test('unapproved department addresses are reported as blocked and cannot become live or test recipients',async()=>{
+test('legacy allowlists do not block department recipients and test summaries still go only to Victor',async()=>{
   const overrides={MAILER_ALLOWED_RECIPIENTS:TEST_RECIPIENT},summary=fixture('test-summary',overrides),body=plan();
   assert.equal((await summary.handler(request(body))).status,200);
-  assert.match(summary.sent[0].message.text,/0 department email\(s\) pass/);
-  assert.match(summary.sent[0].message.text,/Live send blocked/);
+  assert.doesNotMatch(summary.sent[0].message.text,/blocked|approval check|not approved/i);
+  assert.match(summary.sent[0].message.text,/Live send would submit one email to the To and CC addresses below/);
   assert.deepEqual(summary.sent[0].message.to,[TEST_RECIPIENT]);
   const live=fixture('department',overrides);
-  assert.equal((await live.handler(request({...body.drafts[0],reviewed:true,attemptAt:body.attemptAt}))).status,403);
-  assert.equal(live.sent.length,0);
+  assert.equal((await live.handler(request({...body.drafts[0],reviewed:true,attemptAt:body.attemptAt}))).status,200);
+  assert.equal(live.sent.length,1);
+  assert.deepEqual(live.sent[0].message.to,body.drafts[0].to);
+});
+test('summary preview agrees that Victor can receive a normal department email',async()=>{
+  const preview=fixture('test-summary-preview'),body=plan();
+  body.drafts=[{...body.drafts[0],to:[TEST_RECIPIENT],cc:[]}];
+  const response=await preview.handler(request(body));
+  assert.equal(response.status,200);
+  const previewHtml=(await response.json()).html;
+  assert.match(previewHtml,/Live send would submit one email to the To and CC addresses below/);
+  assert.match(previewHtml,/victor\.pena@sixflags\.com/);
+  assert.equal(preview.sent.length,0);
 });
 test('summary mode requires authentication, origin and review; preview deployments cannot send',async()=>{
   for(const mode of ['test-summary','test-summary-preview']) {

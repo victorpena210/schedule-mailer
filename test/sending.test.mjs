@@ -1,10 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {createMailer} from '../server/mailer.mjs';
+import {createMailer, TEST_RECIPIENT} from '../server/mailer.mjs';
 
 const origin = 'https://schedule.example.com';
 const env = {RESEND_API_KEY:'re_test_only_not_a_real_key', MAIL_FROM:'Wardrobe Scheduling <no-reply@schedules.example.com>',
-  MAILER_ACCESS_CODE:'test-only-sending-code-32-characters-long', MAILER_ALLOWED_RECIPIENTS:'manager@example.com;copy@example.com', CONTEXT:'production'};
+  MAILER_ACCESS_CODE:'test-only-sending-code-32-characters-long', CONTEXT:'production'};
 const draft = () => ({groupId:'food-beverage',departments:['Food & Beverage'],to:['manager@example.com'],cc:['copy@example.com'],bcc:false,
   subject:'Weekly schedule',intro:'Review the schedule.',signature:'Wardrobe',reviewed:true,attemptAt:new Date().toISOString(),
   rows:[{department:'Food & Beverage',date:'2026-10-31',name:'Example Employee',location:'Sample Cafe',end:'4:00 PM'}]});
@@ -20,14 +20,14 @@ function setup(overrides = {}, implementation) {
   }});
   return {handler, sent};
 }
-test('public status reveals no credentials or approved recipient list', async () => {
+test('public status reveals no credentials or recipient list', async () => {
   const {handler, sent} = setup();
   const response = await handler(new Request(origin+'/api/send-department'));
   assert.deepEqual(await response.json(), {enabled:true,from:env.MAIL_FROM});
   assert.equal(response.headers.get('cache-control'),'no-store'); assert.equal(sent.length,0);
 });
 test('missing or weak private settings and preview deploys fail closed', async () => {
-  for(const overrides of [{RESEND_API_KEY:''},{MAIL_FROM:''},{MAILER_ALLOWED_RECIPIENTS:''},{MAILER_ALLOWED_RECIPIENTS:'bad-address'},
+  for(const overrides of [{RESEND_API_KEY:''},{MAIL_FROM:''},
     {MAILER_ACCESS_CODE:'123456789012'},{MAIL_FROM:'onboarding@resend.dev'},{CONTEXT:'deploy-preview'},{MAIL_FROM:'Name\r\nBcc: attacker@example.com'}]) {
     const {handler, sent} = setup(overrides);
     assert.equal((await handler(request())).status,503);
@@ -56,12 +56,47 @@ test('sends only the reviewed message with server-controlled sender and escaped 
   assert.ok(!message.html.includes('<script>')); assert.ok(!message.html.includes('<img'));
   assert.match(message.text,/Please do not reply/); assert.equal(message.reply_to,undefined);
 });
-test('unapproved To and CC recipients never reach the provider', async () => {
-  const {handler,sent}=setup();
-  for(const field of ['to','cc']) {
-    const body=draft(); body[field]=['unapproved@example.com'];
-    assert.equal((await handler(request(body))).status,403);
+test('signed-in operators can send to newly added To and CC addresses regardless of legacy allowlist settings', async () => {
+  for(const legacy of [undefined,'','bad-address','old-manager@example.com']) {
+    for(const field of ['to','cc']) {
+      const {handler,sent}=setup({MAILER_ALLOWED_RECIPIENTS:legacy}),body=draft();
+      body[field]=['New.Person@another.example'];
+      assert.equal((await handler(request(body))).status,200);
+      assert.equal(sent.length,1);
+      assert.deepEqual(sent[0].body[field],['new.person@another.example']);
+    }
   }
+});
+test('Victor can receive a department email in To or CC', async () => {
+  for(const field of ['to','cc']) {
+    const {handler,sent}=setup(),body=draft();
+    body[field]=[TEST_RECIPIENT.toUpperCase()];
+    const response=await handler(request(body));
+    assert.equal(response.status,200);
+    assert.equal(sent.length,1);
+    assert.deepEqual(sent[0].body[field],[TEST_RECIPIENT]);
+    assert.deepEqual(sent[0].body[field==='to'?'cc':'to'],field==='to'?['copy@example.com']:['manager@example.com']);
+  }
+});
+test('new recipient addresses still require sign-in and a confirmed review', async () => {
+  const {handler,sent}=setup(),body=draft();
+  body.to=['new-person@another.example'];body.cc=[];
+  assert.equal((await handler(request(body,{authorization:''}))).status,401);
+  assert.equal((await handler(request(body,{authorization:'Bearer wrong-password'}))).status,401);
+  assert.equal((await handler(request({...body,reviewed:false}))).status,400);
+  assert.equal(sent.length,0);
+});
+test('To and CC validation rejects malformed, duplicate and excessive addresses before contacting the provider', async () => {
+  for(const field of ['to','cc']) {
+    for(const invalid of [['bad-address'],['bad@example.com\r\nBcc: attacker@example.com'],['duplicate@example.com','DUPLICATE@example.com'],Array.from({length:51},(_,i)=>`person${i}@example.com`)]) {
+      const {handler,sent}=setup(),body=draft();body[field]=invalid;
+      assert.equal((await handler(request(body))).status,400);
+      assert.equal(sent.length,0);
+    }
+  }
+  const {handler,sent}=setup(),body=draft();
+  body.to=Array.from({length:50},(_,i)=>`person${i}@example.com`);
+  assert.equal((await handler(request(body))).status,400);
   assert.equal(sent.length,0);
 });
 test('rejects invalid and mixed-department payloads before sending', async () => {
