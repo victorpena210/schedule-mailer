@@ -90,7 +90,7 @@ async function importFile(file) {
     if(/\.xlsx$/i.test(file.name)) {
       const excel=await import('./excel.mjs');if(request!==epoch)return;
       excelSource={...excel.openWorkbook(buffer),organize:excel.organizeWorksheet};
-      $('sheet-picker').hidden=false;
+      $('sheet-picker').hidden=excelSource.sheets.length<=1;
       $('worksheet').innerHTML='<option value="">Choose a worksheet…</option>'+excelSource.sheets.map((name,index)=>`<option value="${index}">${esc(name)}</option>`).join('');
       $('file').value='';
       if(excelSource.sheets.length>1) {
@@ -112,7 +112,7 @@ function selectWorksheet() {
   const filename=$('filename').textContent, size=$('file-size').textContent;
   reset(false);excelSource=source;
   $('file-panel').hidden=false;$('step1').href='#file-panel';$('file-info').hidden=false;$('filename').textContent=filename;$('file-size').textContent=size;$('file-type').textContent='XLSX';
-  $('sheet-picker').hidden=false;
+  $('sheet-picker').hidden=excelSource.sheets.length<=1;
   $('worksheet').innerHTML='<option value="">Choose a worksheet…</option>'+source.sheets.map((name,i)=>`<option value="${i}">${esc(name)}</option>`).join('');
   $('worksheet').value=index;
   if(index===''){$('import-status').textContent='Choose the worksheet containing the original weekly schedule.';return;}
@@ -120,7 +120,7 @@ function selectWorksheet() {
     const name=source.sheets[Number(index)];
     result=source.organize(source.workbook,name);
     showResult();
-    $('import-status').textContent=`Worksheet: ${name}. Only this worksheet is included.`;
+    $('import-status').textContent=source.sheets.length>1?`Worksheet: ${name}. Only this worksheet is included.`:'';
   } catch(e) {
     $('import-status').textContent=e.message;$('import-status').classList.add('error');
   }
