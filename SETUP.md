@@ -40,9 +40,9 @@ The test-summary feature adds `/api/test-summary-preview` (10 requests per IP/do
 2. Select two dates. Verify that each department has two separate cards when it has shifts on both days, each containing only that day's rows and a one-date subject.
 3. Check the evening time (default 20:00 Central). October 30, 2026 at that setting queues for October 29 at 8 PM CDT (`2026-10-30T01:00:00.000Z`). November 1 queues for October 31 at 8 PM CDT. November 2 queues for November 1 at 8 PM CST, after the daylight-saving change.
 4. Edit recipients in one daily card and verify that the other date's addresses stay unchanged.
-5. Choose **Schedule** and inspect the complete confirmation, including the day the schedule covers and its send time. Canceling this dialog makes no provider request. Confirmation queues only that one daily email.
+5. Choose **Send** and inspect the complete confirmation, including the day the schedule covers and its send time. Canceling this dialog makes no provider request. Confirmation queues only that one daily email.
 6. Verify the card reports **Scheduled** with its timestamp and reference. Check Resend for the queued email and eventual delivery or bounce status. Provider acceptance does not prove inbox delivery.
-7. Check the late-upload path: when the previous evening has passed, current/future schedule dates show **Send now** and require that explicit confirmation. Past schedule dates and send times more than 30 days away are rejected before contacting the provider.
+7. Check the late-upload path: when the previous evening has passed, current/future schedule dates show **Immediately after confirmation** in the status panel and require that explicit confirmation. Past schedule dates and send times more than 30 days away are rejected before contacting the provider.
 
 The existing test-summary routes can preview multiple dates for the same department and send one summary only to Victor. They never queue or send the department drafts. Each department/date pair must be unique and each draft must contain one date. The summary supports up to 93 daily drafts within the existing 512 KiB request limit.
 

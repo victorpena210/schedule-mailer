@@ -57,6 +57,7 @@ test('department cards expose Send directly and reflect accepted deliveries',()=
  const plan=departmentBatches(rows,settings,dates),drafts=draftsFor(plan);
  const html=schedulePreview(plan,drafts,{enabled:true,needsReview:false,deliveryStates:{'food-beverage':{id:'accepted-id'}}});
  assert.doesNotMatch(html,/Prepare this email|Nothing has been sent/);
- assert.match(html,/1 accepted for sending/);assert.match(html,/disabled>Sent<\/button>/);
+ assert.match(html,/1 accepted for sending/);assert.match(html,/disabled>Send<\/button>/);
+ assert.match(html,/Status <strong>Submitted/);assert.match(html,/Submitted for immediate sending/);
  assert.match(html,/accepted-id/);
 });

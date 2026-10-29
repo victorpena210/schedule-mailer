@@ -31,8 +31,8 @@ export function mountSending({getDraft, canSend, notify, isBlocked = () => false
     $('send-summary').innerHTML = `<dl><dt>From</dt><dd>${esc(settings.from)}</dd><dt>Department</dt><dd>${esc(draft.label)}</dd><dt>To</dt><dd>${draft.to.map(esc).join(', ')}</dd>${draft.cc.length ? `<dt>CC</dt><dd>${draft.cc.map(esc).join(', ')}</dd>` : ''}<dt>Subject</dt><dd>${esc(draft.subject)}</dd><dt>Included</dt><dd>${draft.rows.length} shifts across ${new Set(draft.rows.map(r => r.date)).size} dates</dd></dl>`;
     const warnings=getWarnings();
     if(draft.scheduleDate)$('send-summary').innerHTML+=`<dl><dt>Schedule date</dt><dd>${esc(dateLabel(draft.scheduleDate))}</dd><dt>Send time</dt><dd>${esc(timing.label)}</dd></dl>${timing.notice?`<p class="validation-box warn">${esc(timing.notice)}</p>`:''}`;
-    $('send-review-title').textContent=timing.mode==='scheduled'?'Schedule this daily email?':'Send this daily email now?';
-    $('confirm-send').textContent=timing.mode==='scheduled'?'Confirm & schedule':'Confirm & send now';
+    $('send-review-title').textContent='Send this daily email?';
+    $('confirm-send').textContent='Send';
     if(warnings.length)$('send-summary').innerHTML+=`<div class="validation-box warn"><strong>Check these source warnings</strong><ul>${warnings.map(w=>`<li>${esc(w)}</li>`).join('')}</ul></div>`;
     $('confirm-send').disabled = false; $('cancel-send').disabled = false;
     $('send-review').showModal();

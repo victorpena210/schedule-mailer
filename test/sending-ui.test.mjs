@@ -63,7 +63,7 @@ test('daily scheduling confirms the send time, reports Scheduled, and preserves 
     const sender=mountSending({getDraft:()=>draft,canSend:()=>true,notify:()=>{},now:()=>Date.parse('2026-10-29T22:00:00Z')});
     await tick();el('sending-code').value='test-only-password';
     sender.review();assert.match(el('send-summary').innerHTML,/Oct 29, 2026, 8:00 PM CDT/);
-    assert.equal(el('confirm-send').textContent,'Confirm & schedule');assert.equal(requests.length,0);
+    assert.equal(el('confirm-send').textContent,'Send');assert.equal(requests.length,0);
     el('confirm-send').dispatchEvent(new Event('click'));await tick();
     assert.equal(requests[0].deliveryMode,'scheduled');assert.equal(sender.status(draft).scheduledAt,'2026-10-30T01:00:00.000Z');
     assert.equal(sender.allowed(),false);
