@@ -53,3 +53,6 @@ If a request times out or has an unknown result, retry the unchanged email witho
 The function requires the private code, a same-origin JSON request, an approved recipient list, valid rows, and a confirmed review. It controls the sender and constructs escaped HTML and plain text on the server. It limits the input size and does not log schedule content, addresses, or secrets. Netlify and Resend still process the submitted message, and provider retention settings apply. Keep employee schedule data out of screenshots, deployment files, and test fixtures.
 
 The copy/draft workflow remains available without private settings. This app does not alter Microsoft account security or Authenticator settings.
+
+## Private department recipients
+Set `MAILER_RECIPIENT_SETTINGS` in Netlify Functions environment variables to the complete recipient settings JSON. Mark it secret and restrict it to Production. Never commit that value. `MAILER_ACCESS_CODE` (32–256 printable characters) protects `/api/private-contacts`; it uses the same code as sending. Redeploy after setting these values. Users enter the code under Department recipients and select Unlock department recipients. Clear everything removes the loaded list and code. Local file import remains available. Recipient approval for actual sending still uses `MAILER_ALLOWED_RECIPIENTS`.
