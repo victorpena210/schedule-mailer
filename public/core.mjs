@@ -138,6 +138,8 @@ export function organizeRecords(records) {
 }
 export function sortRows(rows) { return [...rows].sort((a,b)=>a.department.localeCompare(b.department,'en-US',{sensitivity:'base'})||a.date.localeCompare(b.date)||a.name.localeCompare(b.name,'en-US',{sensitivity:'base'})); }
 export function esc(v) {return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+export const AUTOMATED_FOOTER = 'Automated schedule notification. Please do not reply to this address.';
+export function deliverySignature(signature = '') {return [signature.trim(), AUTOMATED_FOOTER].filter(Boolean).join('\n\n');}
 function values(r) {return [r.department,dateLabel(r.date),r.name,r.location,r.end];}
 export function toCsv(rows) {
   const cell=v=>'"'+String(v).replace(/^(\s*[=+@-])/,"'$1").replace(/"/g,'""')+'"';

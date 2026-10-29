@@ -1,6 +1,6 @@
 import {esc} from './core.mjs';
 
-export function mountSending({getDraft, canSend, notify, isBlocked = () => false, onBusyChange = () => {}}) {
+export function mountSending({getDraft, canSend, notify, isBlocked = () => false, onBusyChange = () => {}, onSettingsChange = () => {}}) {
   const $ = id => document.getElementById(id);
   let settings = {enabled:false, from:''}, busy = false, pending = null, revision = 0;
   const attempts = new Map();
@@ -69,7 +69,7 @@ export function mountSending({getDraft, canSend, notify, isBlocked = () => false
   $('send-review').addEventListener('cancel', event => {if(busy) event.preventDefault(); else pending = null;});
   window.addEventListener('beforeunload', event => {if(busy) {event.preventDefault(); event.returnValue = '';}});
   fetch('/api/send-department', {cache:'no-store', signal:AbortSignal.timeout(10_000)})
-    .then(r => r.ok ? r.json() : null).then(data => {if(data?.enabled && typeof data.from === 'string') settings = data; update();})
+    .then(r => r.ok ? r.json() : null).then(data => {if(data?.enabled && typeof data.from === 'string') settings = data; update(); onSettingsChange();})
     .catch(() => update());
-  return {update, reset, get busy() {return busy;}};
+  return {update, reset, get busy() {return busy;}, get connection() {return {enabled:settings.enabled, from:settings.from};}};
 }

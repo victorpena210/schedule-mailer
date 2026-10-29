@@ -1,9 +1,8 @@
 import {createHash, timingSafeEqual} from 'node:crypto';
-import {emailHtml, emailText, recipients, sortRows, esc, dateLabel} from '../public/core.mjs';
+import {emailHtml, emailText, recipients, sortRows, esc, dateLabel, deliverySignature, AUTOMATED_FOOTER as FOOTER} from '../public/core.mjs';
 import {GROUPS} from '../public/routing.mjs';
 
 const MAX_BYTES = 512 * 1024;
-const FOOTER = 'Automated schedule notification. Please do not reply to this address.';
 export const TEST_RECIPIENT = 'victor.pena@sixflags.com';
 const json = (status, body) => new Response(JSON.stringify(body), {
   status, headers: {'Content-Type':'application/json', 'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff'}
@@ -74,7 +73,7 @@ function messageFor(body, settings, requireApproved = true) {
     return clean;
   }));
   const subject = text(body.subject, 180), intro = text(body.intro, 5000, false, true);
-  const signature = [text(body.signature, 2000, false, true), FOOTER].filter(Boolean).join('\n\n');
+  const signature = deliverySignature(text(body.signature, 2000, false, true));
   return {from:settings.from, to:to.sort(), ...(cc.length ? {cc:cc.sort()} : {}), subject,
     html:emailHtml(rows, intro, signature), text:emailText(rows, intro, signature)};
 }
