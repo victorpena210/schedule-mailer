@@ -1,5 +1,6 @@
 import {mountRouting} from './routing-ui.mjs';
 import {mountSending} from './sending.mjs';
+import {mountTestSummary} from './test-summary-ui.mjs';
 import {departmentBatches} from './routing.mjs';
 import {organize,decodeCsv,toCsv,emailHtml,emailText,dateLabel,recipients,esc} from './core.mjs';
 const $=id=>document.getElementById(id);
@@ -18,7 +19,24 @@ function sendingDraft() {
     rows:batch.rows.map(({department,date,name,location,end})=>({department,date,name,location,end})),
     to:batch.to,cc:batch.cc,bcc:$('bcc').checked,subject:$('subject').value,intro:$('intro').value,signature:$('signature').value};
 }
-const sending=mountSending({getDraft:sendingDraft,canSend:()=>Boolean(copyAllowed()&&$('subject').value.trim()),notify:toast});
+function defaultSubject(batch) {
+  const dates=[...new Set(batch.rows.map(r=>r.date))].sort();
+  return `15-year-old schedules · ${batch.label}${dates.length?' · '+dateLabel(dates[0],true)+(dates.length>1?' – '+dateLabel(dates.at(-1),true):''):''}`;
+}
+function testPlan() {
+  const {batches,held}=departmentBatches(result?.rows||[],routing.settings,selection);
+  const included=batches.filter(b=>b.rows.length);
+  if(held.length || !included.length || included.some(b=>!b.ready))return null;
+  return {drafts:included.map(batch=>({groupId:batch.id,departments:[...new Set(batch.rows.map(r=>r.department))],
+    rows:batch.rows.map(({department,date,name,location,end})=>({department,date,name,location,end})),
+    to:batch.to,cc:batch.cc,bcc:false,subject:batch.id===chosenDepartment?$('subject').value:defaultSubject(batch),
+    intro:$('intro').value,signature:$('signature').value}))};
+}
+let testSummary;
+const sending=mountSending({getDraft:sendingDraft,canSend:()=>Boolean(copyAllowed()&&$('subject').value.trim()),notify:toast,
+  isBlocked:()=>Boolean(testSummary?.busy),onBusyChange:()=>testSummary?.update()});
+testSummary=mountTestSummary({getPlan:testPlan,canSend:()=>Boolean(result&&!result.errors.length&&$('review-check').checked&&(!result.warnings.length||$('warning-check').checked)&&!$('bcc').checked),
+  isBlocked:()=>sending.busy,onBusyChange:()=>sending.update(),notify:toast});
 function reset(message=true) {
   epoch++;lastCopied='';fallbackSnapshot='';result=null;selection=new Set();chosenDepartment='';excelSource=null;if(message)routing.reset();routing.setRows([],selection);
   for(const id of ['file','to','cc','subject','intro','signature','fallback-text'])$(id).value='';
@@ -40,12 +58,14 @@ function reset(message=true) {
   if($('copy-fallback').open)$('copy-fallback').close();
   clearTimeout(toastTimer);$('toast').hidden=true;
   sending.reset();
+  testSummary.reset();
   if(message)toast('Schedule, recipient information, and sending code cleared from this tab.');
 }
 function validationBox(kind,title,items) {
   return `<div class="validation-box ${kind}"><strong>${esc(title)}</strong>${items.length?`<ul>${items.slice(0,20).map(t=>`<li>${esc(t)}</li>`).join('')}</ul>${items.length>20?`<p>Plus ${items.length-20} more issues. Correct the source and try again.</p>`:''}`:''}</div>`;
 }
 async function importFile(file) {
+  if(sending.busy||testSummary.busy)return;
   reset(false);const request=epoch;
   if(!file)return;
   if(!/\.(csv|xlsx)$/i.test(file.name)){toast('Choose a .csv or .xlsx file exported from the weekly schedule report.',true);return;}
@@ -111,12 +131,13 @@ function showResult() {
     autoSubject();render();
 }
 function autoSubject() {
-  const dates=[...new Set(selectedRows().map(r=>r.date))].sort(),group=currentBatch();
-  $('subject').value=group?`15-year-old schedules · ${group.label}${dates.length?' · '+dateLabel(dates[0],true)+(dates.length>1?' – '+dateLabel(dates.at(-1),true):''):''}`:'Choose a department';
+  const group=currentBatch();
+  $('subject').value=group?defaultSubject(group):'Choose a department';
 }
 
 function render() {
   sending.update();
+  testSummary.update();
   if(!result)return;
   const rows=selectedRows(),batch=currentBatch(),ready=copyAllowed();
   $('to').value=batch?.to.join('; ')||'';$('cc').value=batch?.cc.join('; ')||'';

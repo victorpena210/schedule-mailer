@@ -33,13 +33,16 @@ Changing `MAIL_FROM` changes the displayed sender name and address. The address 
 5. Deploy the code and redeploy after environment-variable changes. Direct sending stays disabled until all four variables are valid. Preview branches are disabled even if they accidentally receive production variables. The development context is supported for local testing.
 6. Check the Netlify deploy log for the function and its rate-limit rule (10 requests per IP/domain per minute on `/api/send-department`). Netlify rate limiting supplements the private code and recipient allowlist.
 
+The test-summary feature adds `/api/test-summary-preview` (10 requests per IP/domain per minute) and `/api/test-summary` (5 per minute). They use the same four production environment variables and existing private sending code. No Microsoft mailbox connection or additional secret is required. The test destination is fixed on the server to `victor.pena@sixflags.com`, independently of the live recipient allowlist. Test requests cannot supply another To/CC/BCC destination, sender, raw email body, or attachments.
+
 ## Validate before department use
 
-1. Use a sample CSV/XLSX with fictional employees and only your own approved recipient address.
+1. Use a sample CSV/XLSX with fictional employees and load the intended department recipient settings.
 2. Check that the app displays the intended From name and address.
-3. Choose a department, review its rows, check the review boxes, and enter the private sending code.
-4. Choose **Review & send this department**, verify the summary, and confirm **Send email**. Check both the received email and Resend's delivery status. The app's accepted status alone does not prove inbox delivery.
-5. Add approved To/CC addresses to `MAILER_ALLOWED_RECIPIENTS`, redeploy, and load the corresponding private department recipient settings.
+3. Choose dates, review the schedule, check the review boxes, enter the private sending code, and leave BCC off.
+4. Choose **Review test summary for Victor**. This shows all included department recipients and full emails and flags addresses not yet approved for live sending. The preview sends no emails.
+5. Confirm **Send test summary to Victor**. Exactly one `[TEST ONLY]` email goes to **victor.pena@sixflags.com**, with no CC, BCC, or attachments. Check that inbox and Resend's delivery status. The app's accepted status alone does not prove inbox delivery.
+6. Add approved department To/CC addresses to `MAILER_ALLOWED_RECIPIENTS` when ready for live use and redeploy. Then choose and review one department and use **Review & send this department**. Testing never triggers this action or marks a department as sent.
 
 Direct sending currently supports To and CC. For BCC, use the existing copy-and-draft workflow. Each confirmation sends one department email; it does not send other departments automatically.
 

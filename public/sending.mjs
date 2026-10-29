@@ -1,16 +1,16 @@
 import {esc} from './core.mjs';
 
-export function mountSending({getDraft, canSend, notify}) {
+export function mountSending({getDraft, canSend, notify, isBlocked = () => false, onBusyChange = () => {}}) {
   const $ = id => document.getElementById(id);
   let settings = {enabled:false, from:''}, busy = false, pending = null, revision = 0;
   const attempts = new Map();
   const snapshot = draft => JSON.stringify(draft);
   function update() {
-    const draft = getDraft(), allowed = settings.enabled && canSend() && !draft?.bcc;
+    const draft = getDraft(), allowed = settings.enabled && canSend() && !draft?.bcc && !isBlocked();
     $('send-department').disabled = !allowed || busy || !$('sending-code').value.trim();
     $('send-department').textContent = busy ? 'Sending…' : 'Review & send this department';
-    $('sending-code').disabled = busy || !settings.enabled;
-    for(const id of ['clear','file','replace','worksheet']) $(id).disabled = busy;
+    $('sending-code').disabled = busy || isBlocked() || !settings.enabled;
+    for(const id of ['clear','file','replace','worksheet']) $(id).disabled = busy || isBlocked();
     $('sending-from').textContent = settings.enabled ? settings.from : 'Not connected yet';
     $('sending-help').textContent = !settings.enabled ? 'Direct sending is not connected yet. Copying emails and opening drafts still work.'
       : draft?.bcc ? 'Direct sending uses To and CC. Turn off BCC or use an email draft.'
@@ -39,12 +39,12 @@ export function mountSending({getDraft, canSend, notify}) {
     $('send-review').showModal();
   }
   async function send() {
-    if(busy || !pending || !canSend() || snapshot(getDraft()) !== pending.snapshot) return;
+    if(busy || isBlocked() || !pending || !canSend() || snapshot(getDraft()) !== pending.snapshot) return;
     const selected = pending, requestRevision = revision;
     let attempt = attempts.get(selected.snapshot);
     if(attempt?.id) return;
     if(!attempt) {attempt = {attemptAt:new Date().toISOString()}; attempts.set(selected.snapshot, attempt);}
-    busy = true; $('confirm-send').disabled = true; $('cancel-send').disabled = true; update();
+    busy = true; $('confirm-send').disabled = true; $('cancel-send').disabled = true; update(); onBusyChange();
     try {
       const response = await fetch('/api/send-department', {
         method:'POST', cache:'no-store', signal:AbortSignal.timeout(25_000),
@@ -59,7 +59,7 @@ export function mountSending({getDraft, canSend, notify}) {
       attempt.error = error.name === 'TimeoutError' || error.name === 'TypeError' ? 'Sending could not be confirmed. Retry the unchanged email or check Resend before sending again.' : error.message;
       if(requestRevision === revision) notify(attempt.error, true);
     } finally {
-      busy = false; pending = null; $('send-review').close(); update();
+      busy = false; pending = null; $('send-review').close(); update(); onBusyChange();
     }
   }
   $('sending-code').addEventListener('input', update);
