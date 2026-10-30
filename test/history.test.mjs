@@ -75,3 +75,23 @@ test('browser fingerprint matches the exact outgoing message',async()=>{
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(fields)));
   assert.equal(Buffer.from(digest).toString('hex'),messageFingerprint(message));
 });
+
+test('history failures show an unavailable state instead of an empty history',()=>{
+  const html=historyMarkup([],'all',{problem:'Resend denied access to email history.'});
+  assert.match(html,/History could not be loaded/);assert.doesNotMatch(html,/No emails in this view/);
+  assert.match(historyMarkup([],'all',{loading:true}),/Checking email history/);
+});
+
+test('separate history credentials are used only for reading and rate limits are retried safely',async()=>{
+  const {createHistoryReader}=await import('../server/resend-history-client.mjs');
+  const delays=[],headers=[];let calls=0;
+  const read=createHistoryReader({apiKey:'re_read_example',pause:async ms=>delays.push(ms),fetchImpl:async(url,options)=>{headers.push(options.headers.Authorization);calls++;return calls<3?Response.json({}, {status:429}):Response.json({data:[],has_more:false});}});
+  assert.deepEqual(await read('/emails?limit=100'),{data:[],has_more:false});assert.deepEqual(delays,[800,1600]);assert.ok(headers.every(h=>h==='Bearer re_read_example'));
+  const denied=createHistoryReader({apiKey:'re_read_example',pause:async()=>{},fetchImpl:async()=>Response.json({secret:'must-not-leak'},{status:403})});
+  await assert.rejects(()=>denied('/emails'),error=>error.code==='permission'&&!error.message.includes('must-not-leak'));
+  const f=fixture(),used=[];
+  const handler=createMailer({env:{...env,RESEND_HISTORY_API_KEY:'re_read_separate'},history:f.history,now:()=>clock,pause:async()=>{},fetchImpl:async(url,options)=>{used.push({post:options.method==='POST',authorization:options.headers.Authorization});return f.fetchImpl(url,options);}});
+  assert.equal((await handler(request(draft()))).status,200);
+  assert.ok(used.filter(r=>!r.post).every(r=>r.authorization==='Bearer re_read_separate'));
+  assert.ok(used.filter(r=>r.post).every(r=>r.authorization==='Bearer '+env.RESEND_API_KEY));
+});

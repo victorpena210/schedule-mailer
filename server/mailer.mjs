@@ -2,6 +2,7 @@ import {createHash, timingSafeEqual} from 'node:crypto';
 import {emailHtml, emailText, recipients, sortRows, esc, dateLabel, deliverySignature, AUTOMATED_FOOTER as FOOTER} from '../public/core.mjs';
 import {GROUPS} from '../public/routing.mjs';
 import {deliveryDetails} from '../public/delivery-time.mjs';
+import {createHistoryReader,HistoryReadError} from './resend-history-client.mjs';
 
 const MAX_BYTES = 512 * 1024;
 export const TEST_RECIPIENT = 'victor.pena@sixflags.com';
@@ -33,7 +34,7 @@ export function configuration(env) {
     if(!/^re_\S+$/.test(env.RESEND_API_KEY || '') || !/^[\x21-\x7e]{13,256}$/.test(env.MAILER_ACCESS_CODE || '')) return null;
     // Production secrets must not make preview branches able to send email.
     if(env.CONTEXT && env.CONTEXT !== 'production' && env.CONTEXT !== 'dev') return null;
-    return {from, apiKey:env.RESEND_API_KEY, accessCode:env.MAILER_ACCESS_CODE};
+    return {from, apiKey:env.RESEND_API_KEY, historyApiKey:env.RESEND_HISTORY_API_KEY||env.RESEND_API_KEY, accessCode:env.MAILER_ACCESS_CODE};
   } catch {return null;}
 }
 export function authorized(header, expected) {
@@ -156,6 +157,8 @@ export function createMailer({env = process.env, fetchImpl = fetch, mode = 'depa
       let record=null;
       const acceptedResult=(saved,duplicate=false)=>({id:saved.id,status:saved.scheduledAt?'scheduled':'accepted',deliveryStatus:saved.status,duplicate,...(saved.scheduledAt?{scheduledAt:saved.scheduledAt}:{}),createdAt:saved.createdAt});
       if(history&&mode==='department') {
+        const readHistory=createHistoryReader({apiKey:settings.historyApiKey,fetchImpl,pause});
+        const historyFailure=error=>new MailError(503,`${error instanceof HistoryReadError?error.message:'Could not verify earlier emails.'} Nothing new was sent; duplicate protection remains active.`);
         try {
           record=await history.begin(messageFingerprint(message),{createdAt:new Date(now()).toISOString(),groupId:body.groupId,label:GROUPS.find(g=>g.id===body.groupId).label,scheduleDate:body.rows[0].date,subject:message.subject,from:message.from,to:message.to,cc:message.cc||[],scheduledAt:message.scheduled_at||null,status:'unconfirmed',providerKey:idempotencyKey});
         }catch{throw new MailError(503,'The duplicate check is temporarily unavailable. Nothing was sent. Try again shortly.');}
@@ -171,14 +174,14 @@ export function createMailer({env = process.env, fetchImpl = fetch, mode = 'depa
           if(page)await pause(650);
           let listed;
           try {
-            const response=await fetchImpl('https://api.resend.com/emails?limit=100'+(after?'&after='+encodeURIComponent(after):''),{headers:{Authorization:`Bearer ${settings.apiKey}`},signal:AbortSignal.timeout(10000)});
-            if(!response.ok)throw Error();listed=await response.json();if(!Array.isArray(listed.data))throw Error();
-          }catch{throw new MailError(503,'Could not check for previously sent emails. Nothing new was sent. Try again; the Resend key must allow reading email history.');}
+            listed=await readHistory('/emails?limit=100'+(after?'&after='+encodeURIComponent(after):''));
+            if(!Array.isArray(listed.data))throw Error();
+          }catch(error){throw historyFailure(error);}
           for(const prior of listed.data) {
             if(prior.from!==message.from||prior.subject!==message.subject||JSON.stringify([...(prior.to||[])].sort())!==JSON.stringify(message.to)||JSON.stringify([...(prior.cc||[])].sort())!==JSON.stringify(message.cc||[]))continue;
             await pause(650);
             let email;
-            try {const response=await fetchImpl('https://api.resend.com/emails/'+encodeURIComponent(prior.id),{headers:{Authorization:`Bearer ${settings.apiKey}`},signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error();email=await response.json();}catch{throw new MailError(503,'A matching earlier email needs its status checked. Nothing new was sent. Use History and try again.');}
+            try{email=await readHistory('/emails/'+encodeURIComponent(prior.id));}catch(error){throw historyFailure(error);}
             if(email.id!==prior.id||!Array.isArray(email.to))throw new MailError(503,'The earlier email could not be verified. Nothing new was sent.');
             if(messageFingerprint(email)===record.reference) {
               record={...record,id:email.id,status:email.last_event||'unknown',createdAt:Number.isFinite(Date.parse(email.created_at))?new Date(email.created_at).toISOString():record.createdAt,scheduledAt:email.scheduled_at||null,lastCheckedAt:new Date(now()).toISOString()};

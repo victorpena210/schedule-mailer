@@ -1,6 +1,7 @@
 import {configuration,authorized,json} from './mailer.mjs';
 import {GROUPS} from '../public/routing.mjs';
 import {centralDate} from '../public/delivery-time.mjs';
+import {createHistoryReader,HistoryReadError} from './resend-history-client.mjs';
 
 const idPattern=/^[a-zA-Z0-9_-]{1,100}$/;
 const events=new Set(['scheduled','queued','sent','delivered','opened','clicked','delivery_delayed','bounced','complained','failed','canceled','suppressed']);
@@ -43,12 +44,8 @@ export function createEmailHistory({env=process.env,fetchImpl=fetch,history,now=
     if(input.providerAfter&&!idPattern.test(input.providerAfter))return json(400,{error:'The history page is invalid.'});
     const checkedAt=now(),seen=new Set();let warning='',providerHasMore=false,providerAfter=null;
     const unavailable='The email service could not refresh statuses. Saved records are shown below; use Refresh to try again.';
-    const publicWarning=error=>error.historyMessage||unavailable;
-    async function provider(path) {
-      const response=await fetchImpl(`https://api.resend.com${path}`,{headers:{Authorization:`Bearer ${settings.apiKey}`},signal:AbortSignal.timeout(10000)});
-      if(!response.ok)throw Object.assign(new Error(),{historyMessage:[401,403].includes(response.status)?'History needs a Resend API key with permission to read emails. Saved records are shown below.':unavailable});
-      return response.json();
-    }
+    const publicWarning=error=>error instanceof HistoryReadError?error.message:unavailable;
+    const provider=createHistoryReader({apiKey:settings.historyApiKey,fetchImpl,pause});
     try {
       try {
         const page=await provider('/emails?limit=100'+(input.providerAfter?'&after='+encodeURIComponent(input.providerAfter):''));
@@ -74,7 +71,7 @@ export function createEmailHistory({env=process.env,fetchImpl=fetch,history,now=
           }catch(error){warning=publicWarning(error);records.push(record);}
         }else records.push(record);
       }
-      return json(200,{records:records.map(visible),warning,checkedAt:new Date(checkedAt).toISOString(),hasMore:page.hasMore||providerHasMore,cursor:page.records.at(-1)?.key||input.cursor||'',providerAfter});
+      return json(200,{records:records.map(visible),warning,historyAvailable:!warning,checkedAt:new Date(checkedAt).toISOString(),hasMore:page.hasMore||providerHasMore,cursor:page.records.at(-1)?.key||input.cursor||'',providerAfter});
     }catch{return json(503,{error:'Saved email history is temporarily unavailable. Use Refresh to try again.'});}
   };
 }
