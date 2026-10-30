@@ -1,5 +1,6 @@
 import {emailHtml, deliverySignature, dateLabel, esc} from './core.mjs';
 import {deliveryDetails,sendTimeLabel} from './delivery-time.mjs';
+import {deliveryLabels} from './history-ui.mjs';
 
 function recipientEditor(batch,field) {
   const items=field==='to'?batch.contacts.map(contact=>({email:contact.email,name:contact.name})):batch.ccText.split(/[;,\n\r]+/).map(email=>({email:email.trim(),name:''})).filter(c=>c.email);
@@ -38,28 +39,27 @@ export function schedulePreview({batches, held}, drafts, {from = '', enabled = f
     ];
     const editableBatch={...batch,ccText:batch.ccRaw??batch.cc.join('; ')};
     const canCopy=!hasErrors&&(delivery.id||batch.ready)&&!needsReview&&!busy;
-    const canSend=canCopy&&!delivery.id&&enabled&&!draft.bcc&&Boolean(draft.subject.trim())&&!timing.error;
     const headers = [
       ['From', enabled ? from : 'Not connected yet'],
       ['Report departments', draft.departments.join('; ')],
 
       ['Subject', draft.subject.trim() || 'Subject missing']
     ];
-    const statusLabel=delivery.id?(delivery.scheduledAt?'Scheduled':'Submitted'):delivery.error?'Not confirmed':blockers.length?'Needs review':'Awaiting confirmation';
+    const statusLabel=delivery.id?(deliveryLabels[delivery.deliveryStatus]||(delivery.scheduledAt?'Scheduled':'Submitted')):delivery.error?'Not confirmed':blockers.length?'Needs review':'Awaiting confirmation';
     const sendLabel=delivery.id?(delivery.scheduledAt?sendTimeLabel(delivery.scheduledAt):'Submitted for immediate sending'):timing.mode==='now'?'Immediately after confirmation':timing.label||'Choose a valid send time';
     html += `<article class="paper schedule-group" data-email-group="${esc(draft.groupId)}" data-email-draft="${esc(key)}">
-      <header class="schedule-group-heading"><div><h3>${esc(draft.label)}${draft.scheduleDate?` · ${esc(dateLabel(draft.scheduleDate,true))}`:''}</h3><p>One separate email · ${draft.rows.length} shift${draft.rows.length === 1 ? '' : 's'} · ${new Set(draft.rows.map(row => row.name)).size} employees</p></div><button type="button" class="primary draft-send" data-draft-action="send" ${canSend?'':'disabled'}>Send</button></header>
+      <header class="schedule-group-heading"><div><h3>${esc(draft.label)}${draft.scheduleDate?` · ${esc(dateLabel(draft.scheduleDate,true))}`:''}</h3><p>One separate email · ${draft.rows.length} shift${draft.rows.length === 1 ? '' : 's'} · ${new Set(draft.rows.map(row => row.name)).size} employees</p></div></header>
       <section class="email-status${delivery.id?' confirmed':''}" aria-label="Email status">
         <p class="email-status-heading" role="status">Status <strong>${statusLabel}</strong></p>
         <dl>${draft.scheduleDate?`<dt>Schedule date</dt><dd>${esc(dateLabel(draft.scheduleDate))}</dd>`:''}<dt>Send time</dt><dd>${esc(sendLabel)}</dd></dl>
-        <p class="helper">${delivery.id?(delivery.scheduledAt?'Queued with the email service. You can close this page.':'Accepted by the email service.'):'Nothing is sent or scheduled until you confirm.'}</p>
+        <p class="helper">${delivery.id?(delivery.duplicate?'Already submitted — duplicate skipped. See History for its status.':'Recorded in History. You can close the page when Send all finishes.'):'Included when you select Send all and confirm.'}</p>
         ${!delivery.id&&delivery.error?`<p class="inline-status error" role="status">${esc(delivery.error)}</p>`:''}
       </section>
       <dl class="delivery-headers">${headers.slice(0,2).map(([label,value]) => `<dt>${esc(label)}</dt><dd>${esc(value)}</dd>`).join('')}<dt>${draft.bcc?'BCC':'To'}</dt><dd>${delivery.id?draft.to.map(esc).join('; '):recipientEditor(editableBatch,'to')}</dd><dt>CC</dt><dd>${delivery.id?(draft.cc.map(esc).join('; ')||'None'):recipientEditor(editableBatch,'cc')}</dd><dt>Subject</dt><dd>${esc(draft.subject.trim()||'Subject missing')}</dd></dl>
       ${!delivery.id&&timing.notice?`<div class="validation-box warn">${esc(timing.notice)}</div>`:''}
       ${blockers.length ? `<div class="delivery-blockers"><strong>Before sending</strong><ul>${blockers.map(message => `<li>${esc(message)}</li>`).join('')}</ul></div>` : ''}
       <div class="email-body">${emailHtml(draft.rows, draft.intro.trim(), deliverySignature(draft.signature))}</div>
-      <div class="draft-actions">${delivery.id?`<p class="delivery-status">Reference: ${esc(delivery.id)}.</p>`:''}<button type="button" class="secondary" data-draft-action="copy" ${canCopy?'':'disabled'}>Copy email</button><button type="button" class="secondary" data-draft-action="open" ${canCopy&&(copiedGroup===key||copiedGroups.includes(key))?'':'disabled'}>Open email draft</button><p class="helper">${delivery.id?'To replace a confirmed email, cancel it in Resend first.':'Recipient edits apply only to this daily email. Nothing is sent or scheduled until you confirm.'}</p></div>
+      <div class="draft-actions">${delivery.id?`<p class="delivery-status">Reference: ${esc(delivery.id)}.</p>`:''}<button type="button" class="secondary" data-draft-action="copy" ${canCopy?'':'disabled'}>Copy email</button><button type="button" class="secondary" data-draft-action="open" ${canCopy&&(copiedGroup===key||copiedGroups.includes(key))?'':'disabled'}>Open email draft</button><p class="helper">${delivery.id?'View History for this email’s status and send time.':'Recipient edits apply only to this daily email. Nothing is sent or scheduled until you confirm.'}</p></div>
     </article>`;
   }
   const skipped = batches.filter(batch => !batch.rows.length).map(batch => batch.label);

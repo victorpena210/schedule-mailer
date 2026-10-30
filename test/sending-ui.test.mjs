@@ -75,3 +75,29 @@ test('daily scheduling confirms the send time, reports Scheduled, and preserves 
     assert.equal(sender.allowed(),true);assert.equal(sender.status(draft).id,undefined);
   }finally{Object.assign(globalThis,saved);}
 });
+
+test('one confirmation submits all dates, stops on failure, and retry skips accepted emails',async()=>{
+  const saved={document:globalThis.document,window:globalThis.window,fetch:globalThis.fetch};
+  const elements=new Map(),el=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
+  const dates=['2026-10-30','2026-10-31','2026-11-01'];
+  const drafts=dates.map(date=>({draftId:'food-beverage:'+date,scheduleDate:date,sendTime:'20:00',groupId:'food-beverage',label:'Food & Beverage',departments:['Food & Beverage'],to:['manager@example.com'],cc:[],bcc:false,subject:'Daily schedule '+date,intro:'Example',signature:'Wardrobe',rows:[{department:'Food & Beverage',date,name:'Example',location:'Cafe',end:'4 PM'}]}));
+  const requests=[];let fail=true;
+  try {
+    globalThis.document={getElementById:el};globalThis.window=new EventTarget();
+    globalThis.fetch=async(url,options)=>{
+      if(options.method!=='POST')return Response.json({enabled:true,from:'Wardrobe <sender@example.com>'});
+      const body=JSON.parse(options.body);requests.push(body);
+      if(fail&&body.scheduleDate===dates[1])return Response.json({error:'Try again'},{status:503});
+      return Response.json({status:'scheduled',id:body.scheduleDate,scheduledAt:scheduledFor(body.scheduleDate),duplicate:body.scheduleDate===dates[2]});
+    };
+    const sender=mountSending({getDrafts:()=>drafts,canSend:()=>true,notify:()=>{},now:()=>Date.parse('2026-10-29T22:00:00Z'),pause:async()=>{}});
+    await tick();el('sending-code').value='test-only-password';sender.update();
+    el('send-all').dispatchEvent(new Event('click'));assert.equal(requests.length,0);assert.match(el('send-review-title').textContent,/3 emails/);
+    assert.match(el('send-summary').innerHTML,/Oct 29, 2026, 8:00 PM CDT/);assert.match(el('send-summary').innerHTML,/Oct 31, 2026, 8:00 PM CDT/);
+    el('confirm-send').dispatchEvent(new Event('click'));await tick();await tick();
+    assert.deepEqual(requests.map(r=>r.scheduleDate),dates.slice(0,2));assert.equal(sender.status(drafts[0]).id,dates[0]);assert.equal(sender.status(drafts[2]).id,undefined);
+    fail=false;el('send-all').dispatchEvent(new Event('click'));assert.match(el('send-review-title').textContent,/2 emails/);el('confirm-send').dispatchEvent(new Event('click'));await tick();await tick();
+    assert.deepEqual(requests.map(r=>r.scheduleDate),[dates[0],dates[1],dates[1],dates[2]]);
+    assert.equal(requests[1].attemptAt,requests[2].attemptAt);assert.equal(sender.allowed(),false);assert.match(el('bulk-send-status').textContent,/1 duplicate skipped/);
+  }finally{Object.assign(globalThis,saved);}
+});

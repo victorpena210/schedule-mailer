@@ -1,6 +1,7 @@
 import {mountSignIn} from './sign-in.mjs';
 import {mountRouting} from './routing-ui.mjs';
 import {mountSending} from './sending.mjs';
+import {mountHistory} from './history-ui.mjs';
 import {mountTestSummary} from './test-summary-ui.mjs';
 import {departmentBatches} from './routing.mjs';
 import {schedulePreview} from './schedule-preview.mjs';
@@ -21,15 +22,29 @@ function currentDraft(){const batch=currentBatch();if(!batch)return null;const d
 function ready(batch){return Boolean(result&&!result.errors.length&&batch?.rows.length&&batch.ready);}
 const routing=mountRouting(()=>render(),toast);
 function testPlan(){const {batches,held}=plan(),included=batches.filter(b=>b.rows.length);return held.length||!included.length||included.some(b=>!b.ready)?null:{drafts:included.map(draftForBatch)};}
-let testSummary;
-const sending=mountSending({getDraft:currentDraft,canSend:()=>ready(currentBatch()),notify:toast,getWarnings:()=>result?.warnings||[],
-  isBlocked:()=>Boolean(testSummary?.busy),onBusyChange:()=>render(),onSettingsChange:()=>render()});
+let testSummary,history;
+function allDrafts(){return plan().batches.filter(b=>b.rows.length).map(draftForBatch);}
+function allReady(){const current=plan();return Boolean(result&&!result.errors.length&&!current.held.length&&current.batches.filter(b=>b.rows.length).every(b=>sending.status(draftForBatch(b)).id||b.ready));}
+const sending=mountSending({getDrafts:allDrafts,canSend:allReady,notify:toast,getWarnings:()=>result?.warnings||[],
+  isBlocked:()=>Boolean(testSummary?.busy||history?.busy),onBusyChange:()=>render(),onSettingsChange:()=>render(),onComplete:()=>history?.refresh()});
+history=mountHistory({isBlocked:()=>sending.busy||Boolean(testSummary?.busy),onBusyChange:()=>render(),onRecords:records=>sending.restoreHistory(records).catch(()=>{})});
 testSummary=mountTestSummary({getPlan:testPlan,canSend:()=>Boolean(result&&!result.errors.length),getWarnings:()=>result?.warnings||[],
   isBlocked:()=>sending.busy,onBusyChange:()=>render(),notify:toast});
-const signIn=mountSignIn({onSignedIn(settings,code){routing.load(settings);$('sending-code').value=code;$('sending-code').dispatchEvent(new Event('input'));}});
+const signIn=mountSignIn({onSignedIn(settings,code){routing.load(settings);$('sending-code').value=code;$('sending-code').dispatchEvent(new Event('input'));history.refresh();}});
+function showTab(name){
+  const showHistory=name==='history';
+  $('prepare-panel').hidden=showHistory;$('history-panel').hidden=!showHistory;
+  $('prepare-tab').setAttribute('aria-selected',String(!showHistory));$('history-tab').setAttribute('aria-selected',String(showHistory));
+  $('prepare-tab').tabIndex=showHistory?-1:0;$('history-tab').tabIndex=showHistory?0:-1;
+  if(showHistory)history.refresh();
+}
+for(const name of ['prepare','history']) {
+  $(name+'-tab').addEventListener('click',()=>showTab(name));
+  $(name+'-tab').addEventListener('keydown',event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();const target=event.key==='Home'?'prepare':event.key==='End'?'history':name==='prepare'?'history':'prepare';showTab(target);$(target+'-tab').focus();}});
+}
 function reset(signOut=true){
   const code=signOut?'':$('sending-code').value;
-  if(signOut)signIn.lock();
+  if(signOut){signIn.lock();history.reset();showTab('prepare');}
   epoch++;result=null;selection=new Set();activeGroup='';excelSource=null;copied.clear();dailyRecipients.clear();fallbackDraft=null;
   if(signOut)routing.reset();routing.setRows([],selection);
   $('file').value='';$('fallback-text').value='';
@@ -46,6 +61,7 @@ function reset(signOut=true){
   $('step1').className='active';$('step2').className='';$('step3').className='';
   if($('copy-fallback').open)$('copy-fallback').close();
   sending.reset({clearHistory:signOut});testSummary.reset();$('sending-code').value=code;$('sending-code').dispatchEvent(new Event('input'));
+  $('bulk-send-status').textContent='';$('bulk-send-bar').hidden=true;
   clearTimeout(toastTimer);$('toast').hidden=true;
 }
 function validationBox(kind,title,items) {
@@ -109,10 +125,16 @@ function showResult(){
   $('dates').innerHTML=[...selection].sort().map(d=>`<label class="date-chip"><input type="checkbox" value="${d}" checked><span>${esc(dateLabel(d,true))}</span></label>`).join('');
   $('date-fieldset').disabled=Boolean(result.errors.length);routing.setRows(result.rows,selection);
   $('empty-preview').hidden=true;$('stats').hidden=false;$('view-schedule').hidden=false;render();
+  sending.restoreHistory(history.records).catch(()=>{});
 }
 function render(){
   sending.update();testSummary?.update();if(!result)return;
   const batches=plan(),drafts=batches.batches.filter(b=>b.rows.length).map(draftForBatch);
+  $('bulk-send-bar').hidden=!drafts.length;
+  $('bulk-send-help').textContent=history.busy?'Checking history for existing emails…':batches.held.length?'Match the unassigned departments before sending all emails.':drafts.every(d=>sending.status(d).id)?'All these emails are already submitted. Check History for their status.':'Review the emails below, then confirm once. Each department and date gets its own email. Exact duplicates are skipped.';
+  const locked=sending.busy||testSummary.busy;
+  $('date-fieldset').disabled=locked||Boolean(result.errors.length);
+  for(const control of $('routing').querySelectorAll('input,select,button,textarea'))control.disabled=locked;
   const rows=result.rows.filter(r=>selection.has(r.date));
   $('schedule-preview').innerHTML=schedulePreview(batches,drafts,{...sending.connection,hasErrors:Boolean(result.errors.length),needsReview:false,
     busy:sending.busy||testSummary.busy,copiedGroups:drafts.filter(d=>copied.get(d.draftId)===snapshot(d)).map(d=>d.draftId),
@@ -169,7 +191,6 @@ $('schedule-preview').addEventListener('click',event=>{
   const groupId=(remove||action).closest('[data-email-draft]').dataset.emailDraft;
   if(remove){try{editDraftRecipient(groupId,remove.dataset.recipientRemove,'remove',remove.dataset.recipientIndex);}catch(error){toast(error.message,true);}return;}
   if(action.disabled)return;activeGroup=groupId;
-  if(action.dataset.draftAction==='send')sending.review();
   if(action.dataset.draftAction==='copy')copyEmail();
   if(action.dataset.draftAction==='open')openEmail();
 });

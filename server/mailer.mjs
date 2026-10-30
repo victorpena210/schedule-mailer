@@ -5,7 +5,7 @@ import {deliveryDetails} from '../public/delivery-time.mjs';
 
 const MAX_BYTES = 512 * 1024;
 export const TEST_RECIPIENT = 'victor.pena@sixflags.com';
-const json = (status, body) => new Response(JSON.stringify(body), {
+export const json = (status, body) => new Response(JSON.stringify(body), {
   status, headers: {'Content-Type':'application/json', 'Cache-Control':'no-store', 'X-Content-Type-Options':'nosniff'}
 });
 class MailError extends Error {
@@ -25,7 +25,7 @@ function addresses(value) {
   if(parsed.invalid.length || parsed.addresses.length !== value.length) throw new MailError(400, 'Check for invalid or duplicate recipient addresses.');
   return parsed.addresses;
 }
-function configuration(env) {
+export function configuration(env) {
   try {
     const from = text(env.MAIL_FROM, 320);
     const address = from.match(/^[^<>]+<([^<>]+)>$/)?.[1] || from;
@@ -36,7 +36,7 @@ function configuration(env) {
     return {from, apiKey:env.RESEND_API_KEY, accessCode:env.MAILER_ACCESS_CODE};
   } catch {return null;}
 }
-function authorized(header, expected) {
+export function authorized(header, expected) {
   const token = header?.match(/^Bearer ([\x21-\x7e]{13,256})$/)?.[1] || '';
   const hash = value => createHash('sha256').update(value).digest();
   return timingSafeEqual(hash(token), hash(expected));
@@ -102,7 +102,7 @@ function summaryFor(body, settings) {
   const skipped = GROUPS.filter(g => !planned.some(p=>p.group.id===g.id)).map(g => g.label);
   const subject = `[TEST ONLY] Schedule Mailer — ${planned.length} department email${planned.length === 1 ? '' : 's'} / ${rows.length} shift${rows.length === 1 ? '' : 's'}`;
   const intro = `This test sends one summary only to ${TEST_RECIPIENT}, with no CC, BCC, or attachments. No department emails are sent or scheduled by this test.`;
-  const overview = `The plan contains ${planned.length} separate department emails covering ${rows.length} shifts. Each live email goes to the reviewed To and CC addresses and contains only that department's schedule. Live sending requires a separate confirmation for each department.`;
+  const overview = `The plan contains ${planned.length} separate department emails covering ${rows.length} shifts. Each live email goes to the reviewed To and CC addresses and contains only that department's schedule. Live sending uses one Send all confirmation; each department and date still receives a separate email.`;
   const sections = planned.map(({draft, message, group}) => {
     const action = 'Live send would submit one email to the To and CC addresses below.';
     const timing=deliveryDetails(draft);
@@ -119,7 +119,12 @@ function summaryFor(body, settings) {
     text:['TEST ONLY — Schedule delivery summary',intro,overview,dateText,skippedText,...sections.map(s => s.text),FOOTER].join('\n\n')};
 }
 
-export function createMailer({env = process.env, fetchImpl = fetch, mode = 'department', now = () => Date.now()} = {}) {
+export function messageFingerprint(message) {
+  // Scheduling time is deliberately excluded: moving the time must not submit
+  // the same information to the same people twice.
+  return createHash('sha256').update(JSON.stringify([message.from,[...message.to].sort(),[...(message.cc||[])].sort(),message.subject,message.html||'',message.text||''])).digest('hex');
+}
+export function createMailer({env = process.env, fetchImpl = fetch, mode = 'department', history = null, now = () => Date.now(), pause = ms => new Promise(resolve=>setTimeout(resolve,ms))} = {}) {
   if(!['department','test-summary','test-summary-preview'].includes(mode)) throw new Error('Unknown mailer mode.');
   return async request => {
     const settings = configuration(env);
@@ -147,7 +152,47 @@ export function createMailer({env = process.env, fetchImpl = fetch, mode = 'depa
       // Exact daily email retries reuse their reference across refreshes for the
       // provider's 24-hour window. A changed email is a separate submission.
       const daily=mode==='department'&&body.scheduleDate;
-      const idempotencyKey = (daily?'schedule-daily/':mode === 'department' ? 'schedule/' : 'schedule-test/') + createHash('sha256').update(JSON.stringify(daily?[settings.from,body.groupId,body.scheduleDate,message]:[body.attemptAt, mode === 'department' ? body.groupId : 'test-summary', message])).digest('hex');
+      let idempotencyKey = (daily?'schedule-daily/':mode === 'department' ? 'schedule/' : 'schedule-test/') + createHash('sha256').update(JSON.stringify(daily?[settings.from,body.groupId,body.scheduleDate,message]:[body.attemptAt, mode === 'department' ? body.groupId : 'test-summary', message])).digest('hex');
+      let record=null;
+      const acceptedResult=(saved,duplicate=false)=>({id:saved.id,status:saved.scheduledAt?'scheduled':'accepted',deliveryStatus:saved.status,duplicate,...(saved.scheduledAt?{scheduledAt:saved.scheduledAt}:{}),createdAt:saved.createdAt});
+      if(history&&mode==='department') {
+        try {
+          record=await history.begin(messageFingerprint(message),{createdAt:new Date(now()).toISOString(),groupId:body.groupId,label:GROUPS.find(g=>g.id===body.groupId).label,scheduleDate:body.rows[0].date,subject:message.subject,from:message.from,to:message.to,cc:message.cc||[],scheduledAt:message.scheduled_at||null,status:'unconfirmed',providerKey:idempotencyKey});
+        }catch{throw new MailError(503,'The duplicate check is temporarily unavailable. Nothing was sent. Try again shortly.');}
+        if(record.id)return json(200,acceptedResult(record,true));
+        if(now()-Date.parse(record.createdAt)>23*60*60_000)throw new MailError(409,'An earlier attempt for this exact email could not be confirmed. Check its History record before trying again; it will not be sent twice automatically.');
+        idempotencyKey=record.providerKey;
+        if(record.scheduledAt)message.scheduled_at=record.scheduledAt;else delete message.scheduled_at;
+        // Also find emails created by the older app, before persistent history.
+        // Read only matching headers' bodies and stop safely if history cannot
+        // be checked. Each lookup is paced for the provider's request limit.
+        let after='',done=false;
+        for(let page=0;page<10;page++) {
+          if(page)await pause(650);
+          let listed;
+          try {
+            const response=await fetchImpl('https://api.resend.com/emails?limit=100'+(after?'&after='+encodeURIComponent(after):''),{headers:{Authorization:`Bearer ${settings.apiKey}`},signal:AbortSignal.timeout(10000)});
+            if(!response.ok)throw Error();listed=await response.json();if(!Array.isArray(listed.data))throw Error();
+          }catch{throw new MailError(503,'Could not check for previously sent emails. Nothing new was sent. Try again; the Resend key must allow reading email history.');}
+          for(const prior of listed.data) {
+            if(prior.from!==message.from||prior.subject!==message.subject||JSON.stringify([...(prior.to||[])].sort())!==JSON.stringify(message.to)||JSON.stringify([...(prior.cc||[])].sort())!==JSON.stringify(message.cc||[]))continue;
+            await pause(650);
+            let email;
+            try {const response=await fetchImpl('https://api.resend.com/emails/'+encodeURIComponent(prior.id),{headers:{Authorization:`Bearer ${settings.apiKey}`},signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error();email=await response.json();}catch{throw new MailError(503,'A matching earlier email needs its status checked. Nothing new was sent. Use History and try again.');}
+            if(email.id!==prior.id||!Array.isArray(email.to))throw new MailError(503,'The earlier email could not be verified. Nothing new was sent.');
+            if(messageFingerprint(email)===record.reference) {
+              record={...record,id:email.id,status:email.last_event||'unknown',createdAt:Number.isFinite(Date.parse(email.created_at))?new Date(email.created_at).toISOString():record.createdAt,scheduledAt:email.scheduled_at||null,lastCheckedAt:new Date(now()).toISOString()};
+              await history.complete(record);
+              return json(200,acceptedResult(record,true));
+            }
+          }
+          if(!listed.has_more){done=true;break;}
+          after=listed.data.at(-1)?.id;
+          if(!after)break;
+        }
+        if(!done)throw new MailError(503,'The earlier email history is too large to finish checking in this request. Nothing new was sent.');
+        await pause(650);
+      }
       let response;
       try {
         response = await fetchImpl('https://api.resend.com/emails', {
@@ -165,6 +210,12 @@ export function createMailer({env = process.env, fetchImpl = fetch, mode = 'depa
       }
       const data = await response.json().catch(() => null);
       if(typeof data?.id !== 'string' || !data.id) return json(502, {error:'The email service returned an unknown result. Retry this unchanged email or check Resend.'});
+      if(record) {
+        record={...record,id:data.id,status:message.scheduled_at?'scheduled':'accepted'};
+        try{await history.complete(record);}
+        catch{return json(200,{...acceptedResult(record),warning:'The email was accepted, but its history update could not be confirmed. Refresh History before trying again.'});}
+        return json(200,acceptedResult(record));
+      }
       return json(200, {id:data.id, status:message.scheduled_at?'scheduled':'accepted',...(message.scheduled_at?{scheduledAt:message.scheduled_at}:{})});
     } catch(error) {
       return json(error instanceof MailError ? error.status : 400, {error:error instanceof MailError ? error.message : 'The email request is invalid. Review it and try again.'});

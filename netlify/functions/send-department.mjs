@@ -1,7 +1,8 @@
 import {createMailer} from '../../server/mailer.mjs';
+import {createHistoryStore} from '../../server/history-store.mjs';
 
-export default createMailer();
+export default createMailer({history:createHistoryStore()});
 export const config = {
   path:'/api/send-department',
-  rateLimit:{windowLimit:10, windowSize:60, aggregateBy:['ip','domain']}
+  rateLimit:{windowLimit:60, windowSize:60, aggregateBy:['ip','domain']}
 };

@@ -30,7 +30,7 @@ Signed-in operators can send to any valid email address they add to a department
 Changing `MAIL_FROM` changes the displayed sender name and address. The address must belong to the verified Resend domain. No receiving mailbox is needed. The email includes a no-reply notice; this does not remove the recipient's Reply button. Any domain catch-all or forwarding rules determine what happens to replies.
 
 5. Deploy the code and redeploy after environment-variable changes. Direct sending stays disabled until all three variables are valid. Preview branches are disabled even if they accidentally receive production variables. The development context is supported for local testing.
-6. Check the Netlify deploy log for the function and its rate-limit rule (10 requests per IP/domain per minute on `/api/send-department`). Netlify rate limiting supplements the private code and per-email confirmation.
+6. Check the Netlify deploy log for the function and its rate-limit rule (60 requests per IP/domain per minute on `/api/send-department`). Netlify rate limiting supplements the private code and the combined Send all confirmation.
 
 The test-summary feature adds `/api/test-summary-preview` (10 requests per IP/domain per minute) and `/api/test-summary` (5 per minute). They use the same three production environment variables and existing private sending code. No Microsoft mailbox connection or additional secret is required. The test destination is fixed on the server to `victor.pena@sixflags.com`, regardless of the recipients in the department drafts. Test requests cannot supply another To/CC/BCC destination, sender, raw email body, or attachments.
 
@@ -40,7 +40,7 @@ The test-summary feature adds `/api/test-summary-preview` (10 requests per IP/do
 2. Select two dates. Verify that each department has two separate cards when it has shifts on both days, each containing only that day's rows and a one-date subject.
 3. Check the evening time (default 20:00 Central). October 30, 2026 at that setting queues for October 29 at 8 PM CDT (`2026-10-30T01:00:00.000Z`). November 1 queues for October 31 at 8 PM CDT. November 2 queues for November 1 at 8 PM CST, after the daylight-saving change.
 4. Edit recipients in one daily card and verify that the other date's addresses stay unchanged.
-5. Choose **Send** and inspect the complete confirmation, including the day the schedule covers and its send time. Canceling this dialog makes no provider request. Confirmation queues only that one daily email.
+5. Choose **Send all** and inspect the single confirmation, including every department, recipient list, schedule date, and send time. Canceling this dialog submits nothing. Confirm once to submit all pending daily emails. Keep the page open until finished.
 6. Verify the card reports **Scheduled** with its timestamp and reference. Check Resend for the queued email and eventual delivery or bounce status. Provider acceptance does not prove inbox delivery.
 7. Check the late-upload path: when the previous evening has passed, current/future schedule dates show **Immediately after confirmation** in the status panel and require that explicit confirmation. Past schedule dates and send times more than 30 days away are rejected before contacting the provider.
 
@@ -52,7 +52,7 @@ The server recomputes `scheduled_at` from the validated single schedule date and
 
 Scheduled responses contain `status: scheduled`, the provider message ID, and the canonical `scheduledAt` timestamp. Immediate sends return `status: accepted`. If the target time passes between review and submission, the server rejects the stale delivery mode and requires a new review; it never silently changes a scheduled request into an immediate send.
 
-Queued messages are immutable snapshots of their confirmed recipients and content. Changing files, recipients, or the time in the app does not cancel or update those messages. Manage them in Resend, and cancel an existing queued message before making a replacement. The app retains confirmed cards across upload changes in the current tab, but has no persistent queue/history interface across refreshes or devices.
+Queued messages are immutable snapshots of their confirmed recipients and content. Changing files, recipients, or the time in the app does not cancel or update those messages. Manage them in Resend, and cancel an existing queued message before making a replacement. The History tab persists delivery metadata across refreshes, sign-ins, and deployments. Exact duplicates stay blocked even after the provider’s short retry window.
 
 Exact daily payload retries reuse a content-based provider reference across refreshes for Resend's 24-hour idempotency window. The API rejects attempts older than 23 hours. Changed content produces a separate reference; a replacement is not an automatic update. A refreshed/reuploaded message outside the provider window may also duplicate an earlier queued email. Review Resend before resubmitting an existing schedule or retrying an unknown result.
 
@@ -66,3 +66,12 @@ The copy/draft workflow remains available without private settings. This app doe
 
 ## Private department recipients
 Set `MAILER_RECIPIENT_SETTINGS` in Netlify Functions environment variables to the complete recipient settings JSON. Mark it secret and restrict it to Production. Never commit that value. `MAILER_ACCESS_CODE` (13–256 printable characters) protects `/api/private-contacts`; it uses the same code as sending. Redeploy after setting these values. The site opens with a password-only sign-in screen. Users enter this code once to load recipients and authorize the current tab. Sign out & clear and page navigation clear the session; schedule replacement retains it. The static app shell is public; private recipient retrieval and every send remain authenticated on the server. Clear everything removes the loaded list and code. Local file import remains available. These are the default recipient lists loaded at sign-in, not restrictions on who can receive email. Operators can add or remove valid addresses directly in each department card.
+
+
+## History and exact duplicates
+
+The Resend API key needs read access as well as sending access (Full access). A sending-only key causes History to show an explanatory warning and stops new sends until earlier emails can be checked. Netlify Blobs is provisioned automatically by the modern Netlify functions; no database credentials or new environment variables are needed. The store is site-wide, survives deployments, and is used only by authenticated production endpoints.
+
+After deployment, sign in and open History. It imports matching Schedule Mailer records from the configured sender, including older daily emails. Confirm a batch only when it is actually intended for its recipients. Repeating the exact same email should report a skipped duplicate with the original provider ID; do not change its content just to test this. A different send time alone must still be skipped. History must remain available after signing out and signing back in. Sent/delivered/bounce/cancellation states come from Resend, not from elapsed time.
+
+The history stores delivery metadata and message fingerprints, not employee rows or message bodies. A historical record's submitted time is distinct from its scheduled send time. Immediate messages show Immediate submission; no unverified actual-send timestamp is invented. Provider states update on history visits/Refresh and once a minute while the tab is visible. A partial Send all failure stops remaining requests; retry skips accepted records. Unknown requests older than the provider retry window are blocked for review.

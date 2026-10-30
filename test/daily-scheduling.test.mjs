@@ -34,14 +34,14 @@ test('dates come from schedule columns and each department/date becomes its own 
   }
   const html=schedulePreview(plan,drafts,{enabled:true,needsReview:false,from:env.MAIL_FROM,now:clock});
   assert.match(html,/2 separate department emails/);
-  assert.equal((html.match(/>Send<\/button>/g)||[]).length,2);
+  assert.doesNotMatch(html,/data-draft-action="send"/);
   const friday=html.split('data-email-draft="food-beverage:2026-10-30"')[1].split('</article>')[0];
   assert.match(friday,/Friday Cafe/);assert.doesNotMatch(friday,/Sunday Cafe/);
   const status=friday.split('aria-label="Email status"')[1].split('</section>')[0];
   assert.match(status,/Awaiting confirmation/);
   assert.match(status,/Schedule date<\/dt><dd>Friday, October 30, 2026/);
   assert.match(status,/Send time<\/dt><dd>Thu, Oct 29, 2026, 8:00 PM CDT/);
-  assert.match(status,/Nothing is sent or scheduled until you confirm/);
+  assert.match(status,/Included when you select Send all and confirm/);
   const sunday=html.split('data-email-draft="food-beverage:2026-11-01"')[1].split('</article>')[0];
   assert.match(sunday,/Sunday, November 1, 2026/);assert.match(sunday,/Oct 31, 2026, 8:00 PM CDT/);
 });
@@ -120,7 +120,7 @@ test('a confirmed daily card keeps its accepted recipients and send time when de
   drafts[0].to=['changed@example.com'];drafts[0].sendTime='22:00';
   const html=schedulePreview(plan,drafts,{enabled:true,needsReview:false,now:clock,deliveryStates:{[saved.draftId]:{id:'queued-id',scheduledAt:scheduledFor(saved.scheduleDate),draft:saved}}});
   const card=html.split(`data-email-draft="${saved.draftId}"`)[1].split('</article>')[0];
-  assert.match(card,/disabled>Send<\/button>/);assert.match(card,/manager@example.com/);assert.doesNotMatch(card,/changed@example.com|data-recipient-add/);
+  assert.doesNotMatch(card,/data-draft-action="send"/);assert.match(card,/manager@example.com/);assert.doesNotMatch(card,/changed@example.com|data-recipient-add/);
   const status=card.split('aria-label="Email status"')[1].split('</section>')[0];
   assert.match(status,/Status <strong>Scheduled/);assert.match(status,/Friday, October 30, 2026/);
   assert.match(status,/Oct 29, 2026, 8:00 PM CDT/);assert.doesNotMatch(status,/10:00 PM|Awaiting confirmation/);

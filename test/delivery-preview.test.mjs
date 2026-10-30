@@ -52,12 +52,12 @@ test('preview escapes email headers and content and labels an empty date selecti
 });
 
 
-test('department cards expose Send directly and reflect accepted deliveries',()=>{
+test('department cards show accepted deliveries without individual send buttons',()=>{
  const settings=emptySettings();settings.groups[0].contacts=[{name:'Manager',email:'manager@example.com'}];
  const plan=departmentBatches(rows,settings,dates),drafts=draftsFor(plan);
  const html=schedulePreview(plan,drafts,{enabled:true,needsReview:false,deliveryStates:{'food-beverage':{id:'accepted-id'}}});
  assert.doesNotMatch(html,/Prepare this email|Nothing has been sent/);
- assert.match(html,/1 accepted for sending/);assert.match(html,/disabled>Send<\/button>/);
+ assert.match(html,/1 accepted for sending/);assert.doesNotMatch(html,/data-draft-action="send"/);
  assert.match(html,/Status <strong>Submitted/);assert.match(html,/Submitted for immediate sending/);
  assert.match(html,/accepted-id/);
 });
