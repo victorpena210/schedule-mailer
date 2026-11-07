@@ -70,7 +70,11 @@ test('daily scheduling confirms the send time, reports Scheduled, and preserves 
     draft={...draft,sendTime:'22:00',to:['other@example.com']};
     assert.equal(sender.allowed(),false);assert.deepEqual(sender.status(draft).draft.to,['manager@example.com']);
     sender.reset({clearHistory:false});el('sending-code').value='test-only-password';
-    assert.equal(sender.allowed(),false);
+    assert.equal(sender.allowed(),true,'A new upload with changed recipients is a distinct message');
+    draft={...draft,to:['manager@example.com']};
+    assert.equal(sender.allowed(),false,'The same message remains protected even at a different send time');
+    draft={...draft,rows:[{...draft.rows[0],end:'5 PM'}]};
+    assert.equal(sender.allowed(),true,'Updated shifts must not be replaced by an old accepted card');
     draft={...draft,draftId:'food-beverage:2026-11-01',scheduleDate:'2026-11-01',rows:[{...draft.rows[0],date:'2026-11-01'}]};
     assert.equal(sender.allowed(),true);assert.equal(sender.status(draft).id,undefined);
   }finally{Object.assign(globalThis,saved);}

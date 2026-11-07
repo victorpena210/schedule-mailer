@@ -1,17 +1,20 @@
 import {esc,dateLabel,emailHtml,emailText,deliverySignature} from './core.mjs';
 import {deliveryDetails} from './delivery-time.mjs';
 
-export function mountSending({getDraft, getDrafts, canSend, notify, isBlocked=()=>false,onBusyChange=()=>{},onSettingsChange=()=>{},onComplete=()=>{},getWarnings=()=>[],now=()=>Date.now(),pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
+export function mountSending({getDraft, getDrafts, canSend, notify, isBlocked=()=>false,isEditingBlocked=isBlocked,onBusyChange=()=>{},onSettingsChange=()=>{},onComplete=()=>{},getWarnings=()=>[],now=()=>Date.now(),pause=ms=>new Promise(resolve=>setTimeout(resolve,ms))}) {
   const $=id=>document.getElementById(id);
   let settings={enabled:false,from:''},busy=false,pending=null,revision=0,restoreRevision=0;
-  const attempts=new Map(),accepted=new Map();
+  const attempts=new Map(),accepted=new Map(),confirmed=new Map();
   const snapshot=draft=>JSON.stringify(draft),draftKey=draft=>draft?.draftId||snapshot(draft);
+  // Match completed messages by their content across uploads, not by a card ID.
+  // A different send time alone must not make the same email sendable again.
+  const messageKey=draft=>JSON.stringify([settings.from,[...draft.to].sort(),[...draft.cc].sort(),draft.subject.trim(),emailHtml(draft.rows,draft.intro.trim(),deliverySignature(draft.signature.trim())),emailText(draft.rows,draft.intro.trim(),deliverySignature(draft.signature.trim()))]);
   const drafts=()=>getDrafts?getDrafts():[getDraft()].filter(Boolean);
-  function status(draft){return {...(draft&&(accepted.get(draftKey(draft))||attempts.get(snapshot(draft)))||{})};}
+  function status(draft){return {...(draft&&(accepted.get(draftKey(draft))||confirmed.get(messageKey(draft))||attempts.get(snapshot(draft)))||{})};}
   const remaining=()=>drafts().filter(draft=>!status(draft).id);
   function allowed(){const list=remaining();return Boolean(settings.enabled&&canSend()&&list.length&&!busy&&!isBlocked()&&$('sending-code').value.trim()&&list.every(d=>!d.bcc&&!deliveryDetails(d,now()).error));}
   function update() {
-    for(const id of ['clear','file','replace','worksheet','evening-time'])$(id).disabled=busy||isBlocked();
+    for(const id of ['clear','file','replace','upload-another','worksheet','evening-time'])$(id).disabled=busy||isEditingBlocked();
     $('send-all').disabled=!allowed();
     if(!busy)$('send-all').textContent='Send all';
     if(pending&&!busy&&(snapshot(drafts())!==pending.snapshot||!canSend()||isBlocked())) {
@@ -20,7 +23,8 @@ export function mountSending({getDraft, getDrafts, canSend, notify, isBlocked=()
   }
   function reset({clearHistory=true}={}) {
     revision++;restoreRevision++;pending=null;
-    if(clearHistory){attempts.clear();accepted.clear();}
+    accepted.clear();
+    if(clearHistory){attempts.clear();confirmed.clear();}
     $('sending-code').value='';$('send-summary').replaceChildren();
     if($('send-review').open)$('send-review').close();update();
   }
@@ -59,6 +63,7 @@ export function mountSending({getDraft, getDrafts, canSend, notify, isBlocked=()
           if(!response.ok||!['accepted','scheduled'].includes(data?.status)||!data.id||(data.status==='scheduled'&&!data.scheduledAt))throw Error(data?.error||'Sending could not be confirmed. Retry the unchanged emails or check History.');
           Object.assign(attempt,{id:data.id,error:'',scheduledAt:data.scheduledAt||null,deliveryStatus:data.deliveryStatus||data.status,duplicate:Boolean(data.duplicate),createdAt:data.createdAt,draft:item.draft});
           accepted.set(draftKey(item.draft),attempt);
+          confirmed.set(messageKey(item.draft),attempt);
           if(data.duplicate)duplicates++;else submitted++;
           if(data.warning)warning=data.warning;
           onBusyChange();
@@ -83,7 +88,10 @@ export function mountSending({getDraft, getDrafts, canSend, notify, isBlocked=()
       const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(fields)));
       if(request!==restoreRevision||busy)return;
       const hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,'0')).join(''),record=matches.get(hash);
-      if(record)accepted.set(draftKey(draft),{id:record.id,scheduledAt:record.scheduledAt,deliveryStatus:record.status,duplicate:true,draft:structuredClone(draft)});
+      if(record){
+        const saved={id:record.id,scheduledAt:record.scheduledAt,deliveryStatus:record.status,duplicate:true,draft:structuredClone(draft)};
+        accepted.set(draftKey(draft),saved);confirmed.set(messageKey(draft),saved);
+      }
     }
     for(const saved of accepted.values()) {
       const record=records.find(r=>r.id===saved.id);

@@ -26,7 +26,7 @@ let testSummary,history;
 function allDrafts(){return plan().batches.filter(b=>b.rows.length).map(draftForBatch);}
 function allReady(){const current=plan();return Boolean(result&&!result.errors.length&&!current.held.length&&current.batches.filter(b=>b.rows.length).every(b=>sending.status(draftForBatch(b)).id||b.ready));}
 const sending=mountSending({getDrafts:allDrafts,canSend:allReady,notify:toast,getWarnings:()=>result?.warnings||[],
-  isBlocked:()=>Boolean(testSummary?.busy||history?.busy),onBusyChange:()=>render(),onSettingsChange:()=>render(),onComplete:()=>history?.refresh()});
+  isBlocked:()=>Boolean(testSummary?.busy||history?.busy),isEditingBlocked:()=>Boolean(testSummary?.busy),onBusyChange:()=>render(),onSettingsChange:()=>render(),onComplete:()=>history?.refresh()});
 history=mountHistory({isBlocked:()=>sending.busy||Boolean(testSummary?.busy),onBusyChange:()=>render(),onRecords:records=>sending.restoreHistory(records).catch(()=>{})});
 testSummary=mountTestSummary({getPlan:testPlan,canSend:()=>Boolean(result&&!result.errors.length),getWarnings:()=>result?.warnings||[],
   isBlocked:()=>sending.busy,onBusyChange:()=>render(),notify:toast});
@@ -56,6 +56,7 @@ function reset(signOut=true){
   $('dates').innerHTML='<span class="empty-control">No schedule loaded</span>';
   $('validation').hidden=true;$('validation').replaceChildren();$('stats').hidden=true;
   $('empty-preview').hidden=false;$('schedule-preview').hidden=true;$('schedule-preview').replaceChildren();$('view-schedule').hidden=true;
+  $('upload-another').hidden=true;
   $('review-intro').textContent='Dates will appear when you upload a schedule.';
   $('preview-tag').textContent='WAITING FOR FILE';$('preview-tag').className='tag';
   $('step1').className='active';$('step2').className='';$('step3').className='';
@@ -111,13 +112,16 @@ function selectWorksheet() {
     const name=source.sheets[Number(index)];
     result=source.organize(source.workbook,name);
     showResult();
-    $('import-status').textContent=source.sheets.length>1?`Worksheet: ${name}. Only this worksheet is included.`:'';
+    if(source.sheets.length>1)$('import-status').textContent+=` Worksheet: ${name}. Only this worksheet is included.`;
   } catch(e) {
     $('import-status').textContent=e.message;$('import-status').classList.add('error');
   }
 }
 function showResult(){
   $('workspace').classList.remove('waiting');$('file').value='';$('import-status').textContent='';
+  $('upload-another').hidden=false;
+  const loadedDates=[...new Set(result.rows.map(row=>row.date))].sort();
+  $('import-status').textContent=loadedDates.length?`Loaded ${loadedDates.map(date=>dateLabel(date,true)).join(', ')} · ${result.rows.length} shifts.`:'No scheduled shifts loaded.';
   $('validation').hidden=false;
   $('validation').innerHTML=(result.errors.length?validationBox('bad','Fix the source report',result.errors):'')+(result.warnings.length?validationBox('warn','Source warnings',result.warnings):'');
   $('review-intro').textContent='Each selected date gets its own email for each department, sent the evening before.';
@@ -165,13 +169,18 @@ function openEmail(){
   window.location.href=uri;toast('Paste the copied message into your email draft, then review and send.');
 }
 $('file').addEventListener('change',e=>importFile(e.target.files[0]));$('worksheet').addEventListener('change',selectWorksheet);
-$('replace').addEventListener('click',()=>$('file').click());
+function chooseFile(){if(!sending.busy&&!testSummary.busy)$('file').click();}
+$('replace').addEventListener('click',chooseFile);
+$('upload-another').addEventListener('click',chooseFile);
 $('dropzone').addEventListener('click',()=>{if(!sending.busy&&!testSummary.busy)$('file').click();});
 $('dropzone').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('dropzone').click();}});
 $('clear').addEventListener('click',()=>reset());
 for(const event of ['dragenter','dragover'])$('dropzone').addEventListener(event,e=>{e.preventDefault();$('dropzone').classList.add('drag');});
 for(const event of ['dragleave','drop'])$('dropzone').addEventListener(event,e=>{e.preventDefault();$('dropzone').classList.remove('drag');});
 $('dropzone').addEventListener('drop',e=>{const files=e.dataTransfer.files;if(files.length!==1){toast('Choose one CSV or XLSX file at a time.',true);return;}importFile(files[0]);});
+// Keep drag-and-drop available after the first preview replaces the dropzone.
+for(const event of ['dragenter','dragover'])$('file-panel').addEventListener(event,e=>e.preventDefault());
+$('file-panel').addEventListener('drop',e=>{e.preventDefault();const files=e.dataTransfer.files;if(files.length!==1){toast('Choose one CSV or XLSX file at a time.',true);return;}importFile(files[0]);});
 $('dates').addEventListener('change',()=>{selection=new Set([...$('dates').querySelectorAll('input:checked')].map(i=>i.value));routing.setDates(selection);render();});
 $('evening-time').addEventListener('change',()=>render());
 function editDraftRecipient(draftId,field,action,value){
